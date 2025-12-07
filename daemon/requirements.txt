@@ -1,0 +1,22 @@
+# Web API
+fastapi
+uvicorn[standard]
+
+# Config & validation
+pydantic
+python-dotenv
+
+# Vector store (local-first)
+chromadb
+
+# DB / metadata (optional Postgres + pgvector)
+sqlalchemy
+psycopg[binary]
+
+# HTTP + embeddings (OpenAI, etc.)
+httpx
+openai
+
+# Utilities
+orjson
+loguru

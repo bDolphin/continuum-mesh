@@ -1,0 +1,5 @@
+daemon/.venv/
+daemon/__pycache__/
+**/__pycache__/
+ui/node_modules/
+ui/.next/
