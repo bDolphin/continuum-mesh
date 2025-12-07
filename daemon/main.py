@@ -1,64 +1,119 @@
-from typing import List, Optional
-from fastapi import FastAPI, Query
+"""
+FastAPI Memory Daemon
+Location: daemon/main.py
+"""
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import time
+from typing import List, Optional
+import openai
+import os
+from memory_store import MemoryStore
 
-app = FastAPI(title="Context Memory Mesh Daemon", version="0.1.0")
+app = FastAPI(title="Memory Daemon API")
 
+# CORS for Chrome extension
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["chrome-extension://*", "http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-# ----- Models -----
+store = MemoryStore()
 
-class StoreMetadata(BaseModel):
-    url: Optional[str] = None
-    project: Optional[str] = None
-    tags: Optional[List[str]] = None
-
+# Configure OpenAI
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
 class StoreRequest(BaseModel):
-    content: str
-    source: str
-    metadata: Optional[StoreMetadata] = None
+    text: str
+    source_app: str
+    tags: Optional[List[str]] = []
+    url: Optional[str] = None
+    conversation_id: Optional[str] = None
+    message_type: Optional[str] = None
 
+class RecallRequest(BaseModel):
+    query: str
+    n_results: int = 10
+    source_app: Optional[str] = None
+    tags: Optional[List[str]] = None
 
-class StoreResponse(BaseModel):
-    id: str
-    status: str = "stored"
+def get_embedding(text: str) -> List[float]:
+    """Get embedding from OpenAI"""
+    response = openai.embeddings.create(
+        model="text-embedding-3-small",
+        input=text
+    )
+    return response.data[0].embedding
 
+@app.get("/")
+async def root():
+    return {"status": "Memory Daemon is running"}
 
-class RecallResult(BaseModel):
-    id: str
-    content: str
-    score: float
-    metadata: dict
+@app.post("/store")
+async def store_memory(req: StoreRequest):
+    """Store a new memory"""
+    try:
+        embedding = get_embedding(req.text)
+        
+        memory_id = store.add_memory(
+            text=req.text,
+            embedding=embedding,
+            source_app=req.source_app,
+            tags=req.tags,
+            url=req.url,
+            conversation_id=req.conversation_id,
+            message_type=req.message_type
+        )
+        
+        return {
+            "success": True,
+            "memory_id": memory_id,
+            "message": "Memory stored successfully"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
-
-class RecallResponse(BaseModel):
-    results: List[RecallResult]
-
-
-# ----- Health -----
-
-@app.get("/health")
-def health():
-    return {"status": "ok", "time": time.time()}
-
-
-# ----- Store Memory (stub) -----
-
-@app.post("/store", response_model=StoreResponse)
-def store_memory(body: StoreRequest):
-    # TODO: hook into embedding + vector store
-    fake_id = f"mem_{int(time.time())}"
-    return StoreResponse(id=fake_id, status="stored")
-
-
-# ----- Recall Memory (stub) -----
-
-@app.get("/recall", response_model=RecallResponse)
-def recall_memory(
-    query: str = Query(...),
-    limit: int = Query(5, ge=1, le=50),
-    sources: Optional[str] = Query(None),
+@app.get("/recall")
+async def recall_memory(
+    query: str,
+    n_results: int = 10,
+    source_app: Optional[str] = None
 ):
-    # TODO: run semantic + hybrid search against vector store
-    return RecallResponse(results=[])
+    """Semantic search for memories"""
+    try:
+        query_embedding = get_embedding(query)
+        
+        results = store.recall(
+            query_embedding=query_embedding,
+            n_results=n_results,
+            source_app=source_app
+        )
+        
+        return {
+            "success": True,
+            "results": results
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/memory/{memory_id}")
+async def delete_memory(memory_id: str):
+    """Delete a memory"""
+    success = store.delete_memory(memory_id)
+    if success:
+        return {"success": True, "message": "Memory deleted"}
+    else:
+        raise HTTPException(status_code=404, detail="Memory not found")
+
+@app.get("/memories")
+async def list_memories(limit: int = 100):
+    """List all memories (for dashboard)"""
+    memories = store.get_all_memories(limit=limit)
+    return {"success": True, "memories": memories}
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
