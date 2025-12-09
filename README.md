@@ -30,8 +30,6 @@ In ChatGPT: "Implement what I just researched"
 In Cursor: Start coding
 → Cursor sees your full conversation history
 
-text
-
 ---
 
 ## ✨ Features
@@ -58,25 +56,9 @@ text
 
 ## 🏗️ Architecture
 
-┌─────────────────────────────────────────────┐
-│ Browser Extension + IDE Plugins + ChatGPT │
-└────────────────┬────────────────────────────┘
-│
-▼
-┌─────────────────────────────────────────────┐
-│ Local Memory Daemon (FastAPI) │
-│ - Embedding Engine (OpenAI/Nomic) │
-│ - Vector Store (ChromaDB/FAISS) │
-│ - Recall Engine (Semantic + Hybrid) │
-└────────────────┬────────────────────────────┘
-│
-▼
-┌─────────────────────────────────────────────┐
-│ Dashboard (Next.js + React) │
-│ - Memory Timeline - Search - Analytics │
-└─────────────────────────────────────────────┘
-
-text
+<p align="center">
+  <img src="docs/architecture.png" alt="Context Memory Mesh Architecture" width="650">
+</p>
 
 **Tech Stack:**
 - **Backend**: FastAPI, Python 3.11+, OpenAI Embeddings, ChromaDB
@@ -97,29 +79,32 @@ text
 
 1. Clone the repo
 
-git clone https://github.com/bDolphin/continuum-mesh.git
-cd continuum-mesh
+- git clone https://github.com/bDolphin/continuum-mesh.git
+- cd continuum-mesh
+  
 2. Set up the daemon
 
-cd daemon
-python3.11 -m venv .venv
-source .venv/bin/activate # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-Add your OpenAI key
+- cd daemon
+- python3.11 -m venv .venv
+- source .venv/bin/activate # Windows: .venv\Scripts\activate
+- pip install -r requirements.txt
 
-echo "OPENAI_API_KEY=sk-your-key-here" > .env
+ Add your OpenAI key
+
+-echo "OPENAI_API_KEY=sk-your-key-here" > .env
+
 Start the daemon
 
-uvicorn main:app --reload --port 2789
+-uvicorn main:app --reload --port 2789
+
 3. Set up the UI (new terminal)
 
-cd ../ui
-npm install
-npm run dev
+- cd ../ui
+- npm install
+- npm run dev
+  
 4. Open http://localhost:3000
 Dashboard is live! API is at http://localhost:2789/docs
-
-text
 
 ### Browser Extension Setup
 
@@ -128,8 +113,6 @@ cd extension
 2. Enable "Developer mode"
 3. Click "Load unpacked" → Select the extension folder
 4. Pin the extension and start capturing!
-
-text
 
 ---
 
@@ -151,8 +134,6 @@ curl -X POST http://localhost:2789/store
 "tags": ["research", "vectors"]
 }'
 
-text
-
 ### 2. Recall Memories
 
 **In ChatGPT:**
@@ -164,8 +145,6 @@ text
 **From API:**
 
 curl "http://localhost:2789/recall?query=vector%20databases&limit=5"
-
-text
 
 ### 3. Integrate with Your Tools
 
@@ -239,8 +218,6 @@ Make changes, test, commit
 * git push origin feature/your-feature
 
 Open a PR!
-
-text
 
 **Need help?** Open a [GitHub Discussion](https://github.com/bDolphin/continuum-mesh/discussions) or [create an issue](https://github.com/bDolphin/continuum-mesh/issues).
 
