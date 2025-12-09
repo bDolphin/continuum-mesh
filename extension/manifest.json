@@ -11,7 +11,9 @@
     "https://www.perplexity.ai/*",
     "https://chatgpt.com/*",
     "https://chat.openai.com/*",
-    "https://claude.ai/*"
+    "https://claude.ai/*",
+    "http://localhost:2789/*",
+    "http://127.0.0.1:2789/*"
   ],
   "background": {
     "service_worker": "background.js"

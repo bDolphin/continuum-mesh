@@ -7,25 +7,60 @@ console.log('Context Mesh: Perplexity content script loaded');
 const processedMessages = new Set();
 
 function extractConversation() {
-  const messages = document.querySelectorAll('[class*="Markdown"]');
+  // Try multiple selectors to find messages - updated for current Perplexity structure
+  const selectors = [
+    'div[class*="prose"]',
+    'div[class*="markdown"]',
+    'div[class*="Markdown"]',
+    'div[class*="Message"]',
+    '[role="article"]',
+    'div[class*="answer"]',
+    'div[class*="query"]'
+  ];
   
-  messages.forEach((messageEl, index) => {
-    const messageId = `perplexity-${index}-${messageEl.textContent.substring(0, 50)}`;
-    
-    if (processedMessages.has(messageId)) {
-      return;
-    }
-    
+  let allMessages = [];
+  selectors.forEach(selector => {
+    const elements = document.querySelectorAll(selector);
+    allMessages = [...allMessages, ...Array.from(elements)];
+  });
+  
+  // Remove duplicates
+  const uniqueMessages = [...new Set(allMessages)];
+  
+  console.log('Context Mesh: Found', uniqueMessages.length, 'potential message elements');
+  console.log('Context Mesh: Selectors tried:', selectors.join(', '));
+  
+  if (uniqueMessages.length === 0) {
+    console.warn('Context Mesh: No messages found. Page structure may have changed.');
+    console.log('Context Mesh: Current URL:', window.location.href);
+  }
+  
+  uniqueMessages.forEach((messageEl, index) => {
     const text = messageEl.textContent.trim();
     
     if (text.length < 10) {
       return;
     }
     
-    const isQuery = messageEl.closest('[class*="UserMessage"]') !== null;
-    const isResponse = messageEl.closest('[class*="AssistantMessage"]') !== null;
-    const messageType = isQuery ? 'query' : isResponse ? 'response' : 'unknown';
+    const messageId = `perplexity-${index}-${text.substring(0, 50)}`;
+    
+    if (processedMessages.has(messageId)) {
+      return;
+    }
+    
+    const isQuery = messageEl.closest('[class*="UserMessage"]') !== null || 
+                    messageEl.closest('[class*="user"]') !== null;
+    const isResponse = messageEl.closest('[class*="AssistantMessage"]') !== null || 
+                       messageEl.closest('[class*="assistant"]') !== null ||
+                       messageEl.closest('[class*="answer"]') !== null;
+    const messageType = isQuery ? 'query' : isResponse ? 'response' : 'content';
     const conversationId = extractConversationId();
+    
+    console.log('Context Mesh: Storing message:', {
+      type: messageType,
+      length: text.length,
+      preview: text.substring(0, 50) + '...'
+    });
     
     storeInMemory({
       text: text,

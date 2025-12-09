@@ -3,7 +3,7 @@
  * Handles communication between content scripts and local daemon
  */
 
-const DAEMON_URL = 'http://localhost:8000';
+const DAEMON_URL = 'http://localhost:2789';
 
 // Listen for messages from content scripts
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
