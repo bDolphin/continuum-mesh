@@ -44,6 +44,7 @@ export default function Home() {
   const [pinnedMap, setPinnedMap] = useState<Record<string, MemoryResult>>({});
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [activeNav, setActiveNav] = useState<string>("home");
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const fetchConfig = () => {
     fetch("http://127.0.0.1:2789/config")
@@ -214,6 +215,20 @@ export default function Home() {
     { id: 'analytics', label: 'Analytics' },
   ];
 
+  const resetToHome = () => {
+    setActiveNav('home');
+    setQuery('');
+    setResults([]);
+    setError(null);
+    setShowSuggestions(false);
+    setSearchFocused(false);
+    setActiveFilters([]);
+    setHoveredCardId(null);
+    setRippleEffect(null);
+    setExpandedIds(new Set());
+    setLoading(false);
+  };
+
   const renderNavIcon = (id: string) => {
     switch (id) {
       case 'home':
@@ -293,6 +308,7 @@ export default function Home() {
     if (activeNav !== 'home') {
       setActiveNav('home');
     }
+    setFiltersOpen(true);
     setLoading(true);
     setError(null);
     setShowSuggestions(false);
@@ -321,16 +337,102 @@ export default function Home() {
       const trimmedQuery = query.trim().toLowerCase();
       const backendResults: MemoryResult[] = data.results ?? [];
 
-      // If query is empty, trust backend ordering (already newest-first)
-      if (!trimmedQuery) {
-        setResults(backendResults);
-        return;
+      let filteredResults = backendResults;
+
+      // Text filter: only apply when query is non-empty
+      if (trimmedQuery) {
+        filteredResults = filteredResults.filter((r: MemoryResult) =>
+          r.content.toLowerCase().includes(trimmedQuery)
+        );
       }
 
-      // For non-empty queries (testing mode), apply simple text filter + timestamp sort
-      let filteredResults = backendResults.filter((r: MemoryResult) => 
-        r.content.toLowerCase().includes(trimmedQuery)
+      // Preserve post-text-filter results for potential fallback
+      const afterTextFilter = filteredResults;
+
+      // Source filters: ChatGPT / Perplexity / Claude
+      const hasSourceFilter = activeFilters.some((f) =>
+        ["chatgpt", "perplexity", "claude"].includes(f)
       );
+
+      if (hasSourceFilter) {
+        filteredResults = filteredResults.filter((r: MemoryResult) => {
+          const source = r.metadata?.source_app?.toLowerCase() || "";
+          if (!source) return false;
+
+          if (activeFilters.includes("chatgpt") && source.includes("chatgpt")) {
+            return true;
+          }
+          if (activeFilters.includes("perplexity") && source.includes("perplex")) {
+            return true;
+          }
+          if (activeFilters.includes("claude") && source.includes("claude")) {
+            return true;
+          }
+          return false;
+        });
+      }
+
+      // Date filters: Today / This Week
+      const hasDateFilter = activeFilters.some((f) =>
+        ["today", "this-week"].includes(f)
+      );
+
+      const applyDateFilters = (input: MemoryResult[]): MemoryResult[] => {
+        if (!hasDateFilter) return input;
+
+        const now = new Date();
+        const startOfToday = new Date(now);
+        startOfToday.setHours(0, 0, 0, 0);
+
+        const startOfThisWeek = new Date(startOfToday);
+        startOfThisWeek.setDate(startOfThisWeek.getDate() - 6);
+
+        return input.filter((r: MemoryResult) => {
+          if (!r.metadata?.timestamp) return false;
+          const ts = new Date(r.metadata.timestamp);
+
+          let matches = false;
+          if (activeFilters.includes("today")) {
+            matches = ts >= startOfToday;
+          }
+          if (!matches && activeFilters.includes("this-week")) {
+            matches = ts >= startOfThisWeek;
+          }
+          return matches;
+        });
+      };
+
+      filteredResults = applyDateFilters(filteredResults);
+
+      if (trimmedQuery && hasSourceFilter && filteredResults.length === 0) {
+        filteredResults = applyDateFilters(afterTextFilter);
+      }
+
+      if (trimmedQuery && filteredResults.length === 0) {
+        try {
+          const fallbackParams = new URLSearchParams({
+            query: "",
+            n_results: "1000",
+          });
+
+          const fallbackRes = await fetch(
+            `http://127.0.0.1:2789/recall?${fallbackParams.toString()}`
+          );
+
+          if (fallbackRes.ok) {
+            const fallbackData = await fallbackRes.json();
+            const allResults: MemoryResult[] = fallbackData.results ?? [];
+
+            let lexicalResults = allResults.filter((r: MemoryResult) =>
+              r.content.toLowerCase().includes(trimmedQuery)
+            );
+
+            lexicalResults = applyDateFilters(lexicalResults);
+            filteredResults = lexicalResults;
+          }
+        } catch (fallbackErr) {
+        }
+      }
 
       filteredResults.sort((a: MemoryResult, b: MemoryResult) => {
         const timeA = a.metadata?.timestamp ? new Date(a.metadata.timestamp).getTime() : 0;
@@ -349,7 +451,9 @@ export default function Home() {
   const isCollectionsView = activeNav === 'collections';
   const displayResults = isCollectionsView ? pinnedList : results;
   const hasNoResults = displayResults.length === 0;
-  const shouldShowEmptyState = isCollectionsView ? (!error && hasNoResults) : (!loading && !error && hasNoResults);
+  const shouldShowEmptyState = isCollectionsView
+    ? (!error && hasNoResults)
+    : (!loading && !error && hasNoResults && !showSuggestions);
 
   return (
     <main className="min-h-screen relative overflow-hidden flex flex-col items-center p-8">
@@ -412,7 +516,18 @@ export default function Home() {
                   <button
                     key={item.id}
                     type="button"
-                    onClick={() => setActiveNav(item.id)}
+                    onClick={() => {
+                      if (item.id === 'home') {
+                        resetToHome();
+                        setFiltersOpen(false);
+                      } else if (item.id === 'filters') {
+                        setActiveNav(item.id);
+                        setFiltersOpen((prev) => !prev);
+                      } else {
+                        setActiveNav(item.id);
+                        setFiltersOpen(false);
+                      }
+                    }}
                     className={`relative w-full flex items-center ${collapsedClasses} rounded-xl text-sm font-medium transition-all duration-200 ${
                       active
                         ? 'bg-gradient-to-r from-purple-500/70 to-cyan-500/70 text-white shadow-lg shadow-purple-500/30 border border-white/40'
@@ -775,8 +890,8 @@ export default function Home() {
             </button>
           </div>
 
-          {/* Floating Suggestions Dropdown */}
-          {showSuggestions && (
+          {/* Floating Suggestions Dropdown - only before results are shown */}
+          {showSuggestions && !loading && results.length === 0 && (
             <div className="absolute top-full mt-3 left-0 right-0 bg-gradient-to-br from-slate-900/95 to-slate-800/95 backdrop-blur-2xl border border-white/20 rounded-[1.5rem] shadow-2xl shadow-black/50 overflow-hidden animate-slide-up z-50">
               {/* Recent Searches */}
               {recentSearches.length > 0 && (
@@ -832,42 +947,44 @@ export default function Home() {
           )}
         </form>
 
-        {/* Semantic Filter Pills */}
-        <div className="mt-4 flex flex-wrap items-center gap-2">
-          <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Filters:</span>
-          {filterPills.map((pill) => (
-            <button
-              key={pill.id}
-              type="button"
-              onClick={() => toggleFilter(pill.id)}
-              className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all duration-300 ${
-                activeFilters.includes(pill.id)
-                  ? 'bg-gradient-to-r from-purple-500 to-cyan-500 text-white shadow-lg shadow-purple-500/30 scale-105'
-                  : 'bg-white/10 backdrop-blur-xl border border-white/20 text-gray-300 hover:bg-white/15 hover:border-white/30 hover:scale-105'
-              }`}
-            >
-              <span>{pill.icon}</span>
-              <span>{pill.label}</span>
-              {activeFilters.includes(pill.id) && (
-                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+        {/* Semantic Filter Pills - toggled by sidebar "Filters" */}
+        {filtersOpen && (
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Filters:</span>
+            {filterPills.map((pill) => (
+              <button
+                key={pill.id}
+                type="button"
+                onClick={() => toggleFilter(pill.id)}
+                className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all duration-300 ${
+                  activeFilters.includes(pill.id)
+                    ? 'bg-gradient-to-r from-purple-500 to-cyan-500 text-white shadow-lg shadow-purple-500/30 scale-105'
+                    : 'bg-white/10 backdrop-blur-xl border border-white/20 text-gray-300 hover:bg-white/15 hover:border-white/30 hover:scale-105'
+                }`}
+              >
+                <span>{pill.icon}</span>
+                <span>{pill.label}</span>
+                {activeFilters.includes(pill.id) && (
+                  <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                  </svg>
+                )}
+              </button>
+            ))}
+            {activeFilters.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setActiveFilters([])}
+                className="inline-flex items-center gap-1 px-3 py-2 rounded-full text-xs font-medium bg-red-500/20 text-red-300 hover:bg-red-500/30 border border-red-500/30 transition-all duration-200"
+              >
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
                 </svg>
-              )}
-            </button>
-          ))}
-          {activeFilters.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setActiveFilters([])}
-              className="inline-flex items-center gap-1 px-3 py-2 rounded-full text-xs font-medium bg-red-500/20 text-red-300 hover:bg-red-500/30 border border-red-500/30 transition-all duration-200"
-            >
-              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-              Clear all
-            </button>
-          )}
-        </div>
+                Clear all
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Error message */}
