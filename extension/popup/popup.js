@@ -61,12 +61,20 @@ async function searchMemories(query) {
     
     console.log('Context Mesh Popup: Raw results from daemon:', data.results?.length || 0);
     
-    // Get results
-    let results = data.results || [];
-    
+    const backendResults = data.results || [];
+    const trimmedQuery = query.trim().toLowerCase();
+
+    // If query is empty, trust backend ordering (already newest-first)
+    if (!trimmedQuery) {
+      console.log('Context Mesh Popup: Empty query, using backend ordering');
+      displayResults(backendResults);
+      return;
+    }
+
     // Client-side filtering for testing mode (case-insensitive)
-    if (query.trim() && results.length > 0) {
-      const searchTerm = query.trim().toLowerCase();
+    let results = backendResults;
+    if (results.length > 0) {
+      const searchTerm = trimmedQuery;
       const beforeFilter = results.length;
       
       console.log('Context Mesh Popup: Filtering for term:', searchTerm);
@@ -91,7 +99,7 @@ async function searchMemories(query) {
       console.log('Context Mesh Popup: Filtered', beforeFilter, 'to', results.length, 'results');
     }
     
-    // Sort by timestamp (most recent first)
+    // Sort by timestamp (most recent first) for non-empty queries
     results.sort((a, b) => {
       const timeA = a.metadata?.timestamp ? new Date(a.metadata.timestamp).getTime() : 0;
       const timeB = b.metadata?.timestamp ? new Date(b.metadata.timestamp).getTime() : 0;
@@ -131,11 +139,12 @@ function displayResults(results) {
   
   resultsContainer.innerHTML = results.map(result => {
     const timestamp = result.metadata?.timestamp 
-      ? new Date(result.metadata.timestamp).toLocaleString('en-US', {
+      ? new Date(result.metadata.timestamp).toLocaleString(undefined, {
           month: 'short',
           day: 'numeric',
           hour: '2-digit',
-          minute: '2-digit'
+          minute: '2-digit',
+          hour12: true
         })
       : '';
     

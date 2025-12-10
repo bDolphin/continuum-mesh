@@ -96,9 +96,11 @@ class MemoryStore:
             return False
     
     def get_all_memories(self, limit: int = 100) -> List[Dict]:
-        """Get all memories (for dashboard)"""
-        results = self.collection.get(limit=limit)
-        
+        """Get all memories (for dashboard), sorted by timestamp descending"""
+        # Get ALL results first (ChromaDB's get() doesn't guarantee order)
+        # We need to fetch everything to ensure we get the most recent ones
+        results = self.collection.get(limit=100000)
+
         memories = []
         for i in range(len(results['ids'])):
             memories.append({
@@ -106,5 +108,9 @@ class MemoryStore:
                 "text": results['documents'][i],
                 "metadata": results['metadatas'][i]
             })
-        
-        return memories
+
+        # Sort by timestamp (most recent first)
+        memories.sort(key=lambda m: m['metadata'].get('timestamp', '1970-01-01T00:00:00'), reverse=True)
+
+        # Return only the requested limit
+        return memories[:limit]
