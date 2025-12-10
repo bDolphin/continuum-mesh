@@ -32,3 +32,124 @@ body {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+
+/* Parallax nebula animations - subtle motion */
+@keyframes nebula-slow {
+  0%, 100% {
+    transform: translate(0, 0) scale(1);
+    opacity: 0.1;
+  }
+  33% {
+    transform: translate(30px, -20px) scale(1.05);
+    opacity: 0.12;
+  }
+  66% {
+    transform: translate(-20px, 30px) scale(0.98);
+    opacity: 0.08;
+  }
+}
+
+@keyframes nebula-medium {
+  0%, 100% {
+    transform: translate(0, 0) scale(1) rotate(0deg);
+    opacity: 0.1;
+  }
+  50% {
+    transform: translate(-40px, 40px) scale(1.08) rotate(5deg);
+    opacity: 0.13;
+  }
+}
+
+@keyframes nebula-fast {
+  0%, 100% {
+    transform: translate(0, 0) scale(1);
+    opacity: 0.1;
+  }
+  25% {
+    transform: translate(20px, 30px) scale(1.03);
+    opacity: 0.11;
+  }
+  75% {
+    transform: translate(-30px, -20px) scale(0.97);
+    opacity: 0.09;
+  }
+}
+
+/* Soft gradient wave animations */
+@keyframes wave-slow {
+  0%, 100% {
+    transform: translateX(0) translateY(0);
+    opacity: 0.2;
+  }
+  50% {
+    transform: translateX(20px) translateY(-20px);
+    opacity: 0.25;
+  }
+}
+
+@keyframes wave-medium {
+  0%, 100% {
+    transform: translateX(0) translateY(0) rotate(0deg);
+    opacity: 0.2;
+  }
+  50% {
+    transform: translateX(-30px) translateY(30px) rotate(2deg);
+    opacity: 0.15;
+  }
+}
+
+/* Ultra-light floating particles */
+@keyframes float-particle {
+  0%, 100% {
+    transform: translate(0, 0) scale(1);
+    opacity: 0.05;
+  }
+  25% {
+    transform: translate(15px, -25px) scale(1.2);
+    opacity: 0.15;
+  }
+  50% {
+    transform: translate(-10px, -40px) scale(0.8);
+    opacity: 0.08;
+  }
+  75% {
+    transform: translate(20px, -20px) scale(1.1);
+    opacity: 0.12;
+  }
+}
+
+.animate-nebula-slow {
+  animation: nebula-slow 25s ease-in-out infinite;
+}
+
+.animate-nebula-medium {
+  animation: nebula-medium 20s ease-in-out infinite;
+}
+
+.animate-nebula-fast {
+  animation: nebula-fast 15s ease-in-out infinite;
+}
+
+.animate-wave-slow {
+  animation: wave-slow 30s ease-in-out infinite;
+}
+
+.animate-wave-medium {
+  animation: wave-medium 25s ease-in-out infinite;
+}
+
+/* Ripple effect for card interactions */
+@keyframes ripple {
+  0% {
+    transform: translate(-50%, -50%) scale(0);
+    opacity: 0.6;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(40);
+    opacity: 0;
+  }
+}
+
+.animate-ripple {
+  animation: ripple 0.6s ease-out;
+}
