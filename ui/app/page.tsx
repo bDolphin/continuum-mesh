@@ -45,6 +45,10 @@ export default function Home() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [activeNav, setActiveNav] = useState<string>("home");
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [analyticsMemories, setAnalyticsMemories] = useState<MemoryResult[]>([]);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [analyticsError, setAnalyticsError] = useState<string | null>(null);
+  const [analyticsRange, setAnalyticsRange] = useState<"all" | "today" | "week" | "30d">("week");
 
   const fetchConfig = () => {
     fetch("http://127.0.0.1:2789/config")
@@ -57,6 +61,46 @@ export default function Home() {
     setMounted(true);
     fetchConfig();
   }, []);
+
+  useEffect(() => {
+    if (activeNav !== "analytics") {
+      return;
+    }
+
+    if (analyticsMemories.length > 0 || analyticsLoading) {
+      return;
+    }
+
+    const fetchAnalyticsMemories = async () => {
+      try {
+        setAnalyticsLoading(true);
+        setAnalyticsError(null);
+
+        const params = new URLSearchParams({
+          query: "",
+          n_results: "1000",
+        });
+
+        const res = await fetch(
+          `http://127.0.0.1:2789/recall?${params.toString()}`
+        );
+
+        if (!res.ok) {
+          throw new Error(`Daemon error: ${res.status}`);
+        }
+
+        const data = await res.json();
+        const backendResults: MemoryResult[] = data.results ?? [];
+        setAnalyticsMemories(backendResults);
+      } catch (err: any) {
+        setAnalyticsError(err.message ?? "Unknown error");
+      } finally {
+        setAnalyticsLoading(false);
+      }
+    };
+
+    fetchAnalyticsMemories();
+  }, [activeNav, analyticsMemories.length, analyticsLoading]);
 
   const handleModeSwitch = async (mode: string) => {
     if (mode === "openai" && !apiKey) {
@@ -275,6 +319,126 @@ export default function Home() {
 
   const pinnedList = useMemo(() => Object.values(pinnedMap), [pinnedMap]);
 
+  const analyticsStats = useMemo(() => {
+    if (analyticsMemories.length === 0) {
+      return {
+        totalMemories: 0,
+        todayCount: 0,
+        weekCount: 0,
+        pinnedCount: pinnedList.length,
+        sourceCounts: [] as { source: string; count: number }[],
+        tagCounts: [] as { tag: string; count: number }[],
+        recentSearchCount: recentSearches.length,
+        latestActivity: null as string | null,
+      };
+    }
+
+    const now = new Date();
+    const startOfToday = new Date(now);
+    startOfToday.setHours(0, 0, 0, 0);
+
+    const startOfThisWeek = new Date(startOfToday);
+    startOfThisWeek.setDate(startOfThisWeek.getDate() - 6);
+
+    const startOfThirtyDays = new Date(startOfToday);
+    startOfThirtyDays.setDate(startOfThirtyDays.getDate() - 29);
+
+    let rangeStart: Date | null = null;
+    if (analyticsRange === "today") {
+      rangeStart = startOfToday;
+    } else if (analyticsRange === "week") {
+      rangeStart = startOfThisWeek;
+    } else if (analyticsRange === "30d") {
+      rangeStart = startOfThirtyDays;
+    }
+
+    let totalMemories = 0;
+    let todayCount = 0;
+    let weekCount = 0;
+    const sourceMap: Record<string, number> = {};
+    const tagMap: Record<string, number> = {};
+    let latestActivityTime = 0;
+    let latestActivity: string | null = null;
+
+    analyticsMemories.forEach((memory) => {
+      const tsString = memory.metadata?.timestamp;
+      let ts: Date | null = null;
+      let includeInRange = true;
+
+      if (tsString) {
+        ts = new Date(tsString);
+        if (Number.isNaN(ts.getTime())) {
+          includeInRange = false;
+        }
+      } else if (rangeStart) {
+        includeInRange = false;
+      }
+
+      if (rangeStart && ts && ts < rangeStart) {
+        includeInRange = false;
+      }
+
+      if (!includeInRange) {
+        return;
+      }
+
+      totalMemories += 1;
+
+      if (ts) {
+        if (ts >= startOfToday) {
+          todayCount += 1;
+        }
+        if (ts >= startOfThisWeek) {
+          weekCount += 1;
+        }
+        const time = ts.getTime();
+        if (time > latestActivityTime) {
+          latestActivityTime = time;
+          latestActivity = ts.toLocaleString();
+        }
+      }
+
+      const rawSource = memory.metadata?.source_app || "Unknown";
+      const sourceKey = rawSource.toLowerCase().trim() || "unknown";
+      if (sourceKey) {
+        sourceMap[sourceKey] = (sourceMap[sourceKey] || 0) + 1;
+      }
+
+      const tagsValue = memory.metadata?.tags;
+      if (tagsValue) {
+        tagsValue
+          .split(/[,#]/)
+          .map((t) => t.trim())
+          .filter(Boolean)
+          .forEach((tag) => {
+            const key = tag.toLowerCase();
+            tagMap[key] = (tagMap[key] || 0) + 1;
+          });
+      }
+    });
+
+    const sourceCounts = Object.entries(sourceMap)
+      .map(([source, count]) => ({ source, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5);
+
+    const tagCounts = Object.entries(tagMap)
+      .map(([tag, count]) => ({ tag, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 8);
+
+    return {
+      totalMemories,
+      todayCount,
+      weekCount,
+      pinnedCount: pinnedList.length,
+      sourceCounts,
+      tagCounts,
+      recentSearchCount: recentSearches.length,
+      latestActivity,
+    };
+  }, [analyticsMemories, pinnedList, recentSearches, analyticsRange]);
+
   const extractKeywords = (text: string): string[] => {
     // Simple keyword extraction - get words longer than 4 characters
     const words = text.toLowerCase().match(/\b\w{5,}\b/g) || [];
@@ -449,11 +613,14 @@ export default function Home() {
   };
 
   const isCollectionsView = activeNav === 'collections';
+  const isAnalyticsView = activeNav === 'analytics';
   const displayResults = isCollectionsView ? pinnedList : results;
   const hasNoResults = displayResults.length === 0;
-  const shouldShowEmptyState = isCollectionsView
-    ? (!error && hasNoResults)
-    : (!loading && !error && hasNoResults && !showSuggestions);
+  const shouldShowEmptyState = !isAnalyticsView && (
+    isCollectionsView
+      ? (!error && hasNoResults)
+      : (!loading && !error && hasNoResults && !showSuggestions)
+  );
 
   return (
     <main className="min-h-screen relative overflow-hidden flex flex-col items-center p-8">
@@ -988,7 +1155,7 @@ export default function Home() {
       </div>
 
       {/* Error message */}
-      {error && (
+      {!isAnalyticsView && error && (
         <div className="w-full max-w-3xl mb-6 z-10 animate-slide-up">
           <div className="bg-red-500/20 backdrop-blur-2xl border border-red-400/40 rounded-[1.5rem] p-5 flex items-center gap-3 shadow-xl shadow-red-500/10">
             <svg className="w-6 h-6 text-red-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1000,8 +1167,191 @@ export default function Home() {
         </div>
       )}
 
+      {isAnalyticsView && analyticsError && (
+        <div className="w-full max-w-3xl mb-6 z-10 animate-slide-up">
+          <div className="bg-red-500/20 backdrop-blur-2xl border border-red-400/40 rounded-[1.5rem] p-5 flex items-center gap-3 shadow-xl shadow-red-500/10">
+            <svg className="w-6 h-6 text-red-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <circle cx="12" cy="12" r="10" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01" />
+            </svg>
+            <p className="text-red-300">{analyticsError}</p>
+          </div>
+        </div>
+      )}
+
+      {isAnalyticsView && (
+        <div className="w-full max-w-3xl space-y-5 z-10 pb-20 animate-slide-up">
+          <div className="bg-gradient-to-br from-white/[0.12] to-white/[0.08] backdrop-blur-3xl border-2 border-white/20 rounded-[1.5rem] p-6 shadow-2xl">
+            <div className="flex flex-col gap-3 mb-4 md:flex-row md:items-center md:justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-purple-500 to-cyan-500 flex items-center justify-center shadow-lg shadow-purple-500/40">
+                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 19h16M5 17V9m5 8V5m5 12v-6m5 6V7" />
+                  </svg>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold tracking-wider text-gray-400 uppercase">Usage overview</p>
+                  <p className="text-sm text-gray-200">Snapshot of your memories</p>
+                </div>
+              </div>
+              <div className="flex flex-col items-end gap-2 sm:flex-row sm:items-center sm:gap-3">
+                <div className="inline-flex items-center gap-1 rounded-full bg-slate-900/70 border border-white/10 p-0.5 text-[11px]">
+                  {[
+                    { id: "all" as const, label: "All time" },
+                    { id: "today" as const, label: "Today" },
+                    { id: "week" as const, label: "This week" },
+                    { id: "30d" as const, label: "30 days" },
+                  ].map((range) => {
+                    const active = analyticsRange === range.id;
+                    return (
+                      <button
+                        key={range.id}
+                        type="button"
+                        onClick={() => setAnalyticsRange(range.id)}
+                        className={`px-2.5 py-1 rounded-full transition-all duration-150 ${
+                          active
+                            ? "bg-gradient-to-r from-purple-500 to-cyan-500 text-white shadow-sm shadow-purple-500/40"
+                            : "text-gray-300 hover:text-white hover:bg-white/5"
+                        }`}
+                      >
+                        {range.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                {analyticsStats.latestActivity && (
+                  <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-900/70 border border-white/10 text-xs text-gray-300">
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span>Last activity {analyticsStats.latestActivity}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="px-3 py-2 rounded-xl bg-white/5 border border-white/10">
+                <p className="text-[11px] uppercase tracking-wider text-gray-400 mb-1">Total memories</p>
+                <p className="text-xl font-semibold text-white">{analyticsStats.totalMemories.toLocaleString()}</p>
+              </div>
+              <div className="px-3 py-2 rounded-xl bg-white/5 border border-white/10">
+                <p className="text-[11px] uppercase tracking-wider text-gray-400 mb-1">Added today</p>
+                <p className="text-xl font-semibold text-purple-200">{analyticsStats.todayCount}</p>
+              </div>
+              <div className="px-3 py-2 rounded-xl bg-white/5 border border-white/10">
+                <p className="text-[11px] uppercase tracking-wider text-gray-400 mb-1">This week</p>
+                <p className="text-xl font-semibold text-cyan-200">{analyticsStats.weekCount}</p>
+              </div>
+              <div className="px-3 py-2 rounded-xl bg-white/5 border border-white/10">
+                <p className="text-[11px] uppercase tracking-wider text-gray-400 mb-1">Pinned</p>
+                <p className="text-xl font-semibold text-pink-200">{analyticsStats.pinnedCount}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="bg-gradient-to-br from-white/[0.12] to-white/[0.08] backdrop-blur-3xl border-2 border-white/20 rounded-[1.5rem] p-6 shadow-2xl">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <span className="w-7 h-7 rounded-lg bg-purple-500/30 flex items-center justify-center">
+                    <svg className="w-4 h-4 text-purple-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 10h10M4 14h6" />
+                    </svg>
+                  </span>
+                  <p className="text-sm font-semibold text-white">Sources</p>
+                </div>
+              </div>
+              {analyticsStats.sourceCounts.length === 0 ? (
+                <p className="text-sm text-gray-400">No source data yet. Add memories from your tools to see a breakdown here.</p>
+              ) : (
+                <div className="space-y-2">
+                  {analyticsStats.sourceCounts.map((item) => (
+                    <div key={item.source} className="flex items-center justify-between text-sm">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-purple-400" />
+                        <span className="capitalize text-gray-200">{item.source}</span>
+                      </div>
+                      <span className="text-gray-300">{item.count}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="bg-gradient-to-br from-white/[0.12] to-white/[0.08] backdrop-blur-3xl border-2 border-white/20 rounded-[1.5rem] p-6 shadow-2xl">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <span className="w-7 h-7 rounded-lg bg-cyan-500/30 flex items-center justify-center">
+                    <svg className="w-4 h-4 text-cyan-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+                    </svg>
+                  </span>
+                  <p className="text-sm font-semibold text-white">Top tags</p>
+                </div>
+              </div>
+              {analyticsStats.tagCounts.length === 0 ? (
+                <p className="text-sm text-gray-400">No tags detected yet. Add tags in your source tools to see them here.</p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {analyticsStats.tagCounts.map((item) => (
+                    <div key={item.tag} className="px-3 py-1.5 rounded-full bg-purple-500/20 border border-purple-500/40 text-xs text-purple-100">
+                      <span className="mr-2 text-purple-200">#{item.tag}</span>
+                      <span className="text-purple-300/80">{item.count}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="bg-gradient-to-br from-white/[0.12] to-white/[0.08] backdrop-blur-3xl border-2 border-white/20 rounded-[1.5rem] p-6 shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <span className="w-7 h-7 rounded-lg bg-pink-500/30 flex items-center justify-center">
+                  <svg className="w-4 h-4 text-pink-100" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4h16v4H4zM4 12h8v8H4zM16 12h4v8h-4z" />
+                  </svg>
+                </span>
+                <p className="text-sm font-semibold text-white">Search and curation</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="px-3 py-2 rounded-xl bg-white/5 border border-white/10">
+                <p className="text-[11px] uppercase tracking-wider text-gray-400 mb-1">Recent searches</p>
+                <p className="text-lg font-semibold text-white">{analyticsStats.recentSearchCount}</p>
+              </div>
+              <div className="px-3 py-2 rounded-xl bg-white/5 border border-white/10">
+                <p className="text-[11px] uppercase tracking-wider text-gray-400 mb-1">Indexed memories</p>
+                <p className="text-lg font-semibold text-gray-100">{analyticsMemories.length}</p>
+              </div>
+              <div className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 flex items-center justify-between">
+                <div>
+                  <p className="text-[11px] uppercase tracking-wider text-gray-400 mb-1">Pinned coverage</p>
+                  <p className="text-lg font-semibold text-pink-100">
+                    {analyticsStats.totalMemories > 0
+                      ? `${Math.round((analyticsStats.pinnedCount / analyticsStats.totalMemories) * 100)}%`
+                      : '0%'}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {analyticsLoading && analyticsMemories.length === 0 && (
+              <div className="mt-4 flex items-center gap-2 text-xs text-gray-400">
+                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+                <span>Calculating analytics from your indexed memories</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Enhanced Memory Cards with Depth & Elevation */}
-      <div className="w-full max-w-3xl space-y-5 z-10 pb-20">
+      {!isAnalyticsView && (
+        <div className="w-full max-w-3xl space-y-5 z-10 pb-20">
         {displayResults.map((r, index) => {
           const keywords = extractKeywords(r.content);
           const isHovered = hoveredCardId === r.id;
@@ -1278,6 +1628,7 @@ export default function Home() {
           </div>
         )}
       </div>
+    )}
 
       {/* Settings Modal */}
       {showSettings && (
@@ -1316,7 +1667,7 @@ export default function Home() {
               {/* Mode Selection */}
               <div className="space-y-3">
                 <label className="text-sm font-medium text-gray-300">Select Mode</label>
-                
+
                 {/* Testing Mode */}
                 <button
                   onClick={() => handleModeSwitch("testing")}
@@ -1382,7 +1733,12 @@ export default function Home() {
                     />
                     <p className="text-xs text-gray-500 mt-1">
                       Get your API key from{" "}
-                      <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" className="text-purple-400 hover:underline">
+                      <a
+                        href="https://platform.openai.com/api-keys"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-purple-400 hover:underline"
+                      >
                         platform.openai.com
                       </a>
                     </p>
@@ -1392,11 +1748,13 @@ export default function Home() {
 
               {/* Status Message */}
               {configMessage && (
-                <div className={`p-4 rounded-[1rem] border backdrop-blur-xl ${
-                  configMessage.type === "success"
-                    ? "bg-green-500/20 border-green-500/50 text-green-300"
-                    : "bg-red-500/20 border-red-500/50 text-red-300"
-                } animate-slide-up`}>
+                <div
+                  className={`p-4 rounded-[1rem] border backdrop-blur-xl ${
+                    configMessage.type === "success"
+                      ? "bg-green-500/20 border-green-500/50 text-green-300"
+                      : "bg-red-500/20 border-red-500/50 text-red-300"
+                  } animate-slide-up`}
+                >
                   <div className="flex items-center gap-2">
                     {configMessage.type === "success" ? (
                       <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
