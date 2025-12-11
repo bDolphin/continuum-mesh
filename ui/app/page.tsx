@@ -384,8 +384,10 @@ export default function Home() {
         ["chatgpt", "perplexity", "claude"].includes(f)
       );
 
-      if (hasSourceFilter) {
-        filteredResults = filteredResults.filter((r: MemoryResult) => {
+      const applySourceFilters = (input: MemoryResult[]): MemoryResult[] => {
+        if (!hasSourceFilter) return input;
+
+        return input.filter((r: MemoryResult) => {
           const source = r.metadata?.source_app?.toLowerCase() || "";
           if (!source) return false;
 
@@ -400,7 +402,9 @@ export default function Home() {
           }
           return false;
         });
-      }
+      };
+
+      filteredResults = applySourceFilters(filteredResults);
 
       // Date filters: Today / This Week
       const hasDateFilter = activeFilters.some((f) =>
@@ -434,10 +438,6 @@ export default function Home() {
 
       filteredResults = applyDateFilters(filteredResults);
 
-      if (trimmedQuery && hasSourceFilter && filteredResults.length === 0) {
-        filteredResults = applyDateFilters(afterTextFilter);
-      }
-
       if (trimmedQuery && filteredResults.length === 0) {
         try {
           const fallbackParams = new URLSearchParams({
@@ -457,6 +457,7 @@ export default function Home() {
               r.content.toLowerCase().includes(trimmedQuery)
             );
 
+            lexicalResults = applySourceFilters(lexicalResults);
             lexicalResults = applyDateFilters(lexicalResults);
             filteredResults = lexicalResults;
           }
@@ -479,7 +480,66 @@ export default function Home() {
   };
 
   const isCollectionsView = activeNav === 'collections';
-  const displayResults = isCollectionsView ? pinnedList : results;
+
+  const displayResults = useMemo(() => {
+    if (isCollectionsView) {
+      return pinnedList;
+    }
+
+    let output = results;
+
+    const hasSourceFilterView = activeFilters.some((f) =>
+      ["chatgpt", "perplexity", "claude"].includes(f)
+    );
+
+    if (hasSourceFilterView) {
+      output = output.filter((r: MemoryResult) => {
+        const source = r.metadata?.source_app?.toLowerCase() || "";
+        if (!source) return false;
+
+        if (activeFilters.includes("chatgpt") && source.includes("chatgpt")) {
+          return true;
+        }
+        if (activeFilters.includes("perplexity") && source.includes("perplex")) {
+          return true;
+        }
+        if (activeFilters.includes("claude") && source.includes("claude")) {
+          return true;
+        }
+        return false;
+      });
+    }
+
+    const hasDateFilterView = activeFilters.some((f) =>
+      ["today", "this-week"].includes(f)
+    );
+
+    if (hasDateFilterView) {
+      const now = new Date();
+      const startOfToday = new Date(now);
+      startOfToday.setHours(0, 0, 0, 0);
+
+      const startOfThisWeek = new Date(startOfToday);
+      startOfThisWeek.setDate(startOfThisWeek.getDate() - 6);
+
+      output = output.filter((r: MemoryResult) => {
+        if (!r.metadata?.timestamp) return false;
+        const ts = new Date(r.metadata.timestamp);
+
+        let matches = false;
+        if (activeFilters.includes("today")) {
+          matches = ts >= startOfToday;
+        }
+        if (!matches && activeFilters.includes("this-week")) {
+          matches = ts >= startOfThisWeek;
+        }
+        return matches;
+      });
+    }
+
+    return output;
+  }, [results, pinnedList, activeFilters, isCollectionsView]);
+
   const hasNoResults = displayResults.length === 0;
   const shouldShowEmptyState = isCollectionsView
     ? (!error && hasNoResults)
