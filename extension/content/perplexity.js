@@ -5,6 +5,7 @@
 console.log('Context Mesh: Perplexity content script loaded');
 
 const processedMessages = new Set();
+let lastEmptyWarning = 0;
 
 function extractConversation() {
   // Try multiple selectors to find messages - updated for current Perplexity structure
@@ -15,7 +16,9 @@ function extractConversation() {
     'div[class*="Message"]',
     '[role="article"]',
     'div[class*="answer"]',
-    'div[class*="query"]'
+    'div[class*="query"]',
+    '[data-message-id]',
+    'main article'
   ];
   
   let allMessages = [];
@@ -23,6 +26,14 @@ function extractConversation() {
     const elements = document.querySelectorAll(selector);
     allMessages = [...allMessages, ...Array.from(elements)];
   });
+
+  // Capture new Perplexity layout that uses data-testid identifiers
+  const attrKeywords = ['message', 'answer', 'response', 'query', 'turn', 'chat'];
+  const attrElements = Array.from(document.querySelectorAll('[data-testid], [data-test-id]')).filter((el) => {
+    const testId = (el.getAttribute('data-testid') || el.getAttribute('data-test-id') || '').toLowerCase();
+    return attrKeywords.some((keyword) => testId.includes(keyword));
+  });
+  allMessages = [...allMessages, ...attrElements];
   
   // Remove duplicates
   const uniqueMessages = [...new Set(allMessages)];
@@ -31,8 +42,12 @@ function extractConversation() {
   console.log('Context Mesh: Selectors tried:', selectors.join(', '));
   
   if (uniqueMessages.length === 0) {
-    console.warn('Context Mesh: No messages found. Page structure may have changed.');
-    console.log('Context Mesh: Current URL:', window.location.href);
+    const now = Date.now();
+    if (now - lastEmptyWarning > 5000) {
+      console.warn('Context Mesh: No messages found. Page structure may have changed.');
+      console.log('Context Mesh: Current URL:', window.location.href);
+      lastEmptyWarning = now;
+    }
   }
   
   uniqueMessages.forEach((messageEl, index) => {
@@ -48,11 +63,16 @@ function extractConversation() {
       return;
     }
     
+    const testId = (messageEl.getAttribute('data-testid') || messageEl.getAttribute('data-test-id') || '').toLowerCase();
     const isQuery = messageEl.closest('[class*="UserMessage"]') !== null || 
-                    messageEl.closest('[class*="user"]') !== null;
+                    messageEl.closest('[class*="user"]') !== null ||
+                    testId.includes('user') ||
+                    testId.includes('query');
     const isResponse = messageEl.closest('[class*="AssistantMessage"]') !== null || 
                        messageEl.closest('[class*="assistant"]') !== null ||
-                       messageEl.closest('[class*="answer"]') !== null;
+                       messageEl.closest('[class*="answer"]') !== null ||
+                       testId.includes('answer') ||
+                       testId.includes('response');
     const messageType = isQuery ? 'query' : isResponse ? 'response' : 'content';
     const conversationId = extractConversationId();
     

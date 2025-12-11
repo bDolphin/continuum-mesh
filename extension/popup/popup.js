@@ -5,6 +5,8 @@
 const statusIndicator = document.getElementById('statusIndicator');
 const statusText = document.getElementById('statusText');
 const openDashboardBtn = document.getElementById('openDashboard');
+const dashboardFooter = document.querySelector('.footer');
+const statusDashboardPill = document.getElementById('statusDashboardPill');
 const searchInput = document.getElementById('searchInput');
 const searchBtn = document.getElementById('searchBtn');
 const resultsContainer = document.getElementById('results');
@@ -126,8 +128,22 @@ async function searchMemories(query) {
 /**
  * Display search results
  */
+function toggleDashboardPill(show) {
+  if (!statusDashboardPill) return;
+  if (show) {
+    statusDashboardPill.classList.remove('status-pill-hidden');
+    statusDashboardPill.setAttribute('aria-hidden', 'false');
+    dashboardFooter?.classList.add('footer-hidden');
+  } else {
+    statusDashboardPill.classList.add('status-pill-hidden');
+    statusDashboardPill.setAttribute('aria-hidden', 'true');
+    dashboardFooter?.classList.remove('footer-hidden');
+  }
+}
+
 function displayResults(results) {
   if (results.length === 0) {
+    toggleDashboardPill(false);
     resultsContainer.innerHTML = `
       <div class="empty-state">
         <div class="empty-icon">🔍</div>
@@ -136,7 +152,7 @@ function displayResults(results) {
     `;
     return;
   }
-  
+  toggleDashboardPill(true);
   resultsContainer.innerHTML = results.map(result => {
     const timestamp = result.metadata?.timestamp 
       ? new Date(result.metadata.timestamp).toLocaleString(undefined, {
@@ -208,6 +224,10 @@ function escapeHtml(text) {
  * Open dashboard in new tab
  */
 openDashboardBtn.addEventListener('click', () => {
+  chrome.tabs.create({ url: 'http://localhost:3000' });
+});
+
+statusDashboardPill?.addEventListener('click', () => {
   chrome.tabs.create({ url: 'http://localhost:3000' });
 });
 
