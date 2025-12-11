@@ -635,7 +635,6 @@ export default function Home() {
           }
           return matches;
         });
-      };
 
       // Apply provider + date filters to primary results
       filteredResults = applyDateFilters(applySourceFilters(filteredResults));
@@ -647,12 +646,11 @@ export default function Home() {
       }
 
       // Lexical fallback across a larger result set
-      if (trimmedQuery && filteredResults.length === 0) {
-        try {
-          const fallbackParams = new URLSearchParams({
-            query: "",
-            n_results: "1000",
-          });
+      try {
+        const fallbackParams = new URLSearchParams({
+          query: "",
+          n_results: "1000",
+        });
 
           const fallbackRes = await fetch(
             `http://127.0.0.1:2789/recall?${fallbackParams.toString()}`
@@ -1205,7 +1203,11 @@ export default function Home() {
         {/* Product value tagline */}
         <p
           className={`text-xl font-light mb-4 tracking-wide ${
+<<<<<<< HEAD
             isDawn ? 'text-slate-800' : 'text-gray-200'
+=======
+            isDawn ? 'text-slate-700' : 'text-gray-200'
+>>>>>>> origin/main
           }`}
         >
           <span className="bg-gradient-to-r from-purple-300 via-pink-300 to-cyan-300 bg-clip-text text-transparent">
@@ -1215,7 +1217,11 @@ export default function Home() {
         
         <p
           className={`text-base max-w-2xl mx-auto leading-relaxed ${
+<<<<<<< HEAD
             isDawn ? 'text-slate-600' : 'text-gray-400'
+=======
+            isDawn ? 'text-slate-500' : 'text-gray-400'
+>>>>>>> origin/main
           }`}
         >
           <span className="inline-flex items-center gap-2">
@@ -1419,7 +1425,11 @@ export default function Home() {
               <input
                 className={`flex-1 bg-transparent outline-none text-lg font-light ${
                   isDawn
+<<<<<<< HEAD
                     ? 'text-slate-800 placeholder:text-slate-600'
+=======
+                    ? 'text-slate-800 placeholder:text-slate-400'
+>>>>>>> origin/main
                     : 'text-white placeholder:text-gray-400'
                 }`}
                 placeholder="Search your memories..."
@@ -2096,6 +2106,7 @@ export default function Home() {
       )}
 
       {/* Enhanced Memory Cards with Depth & Elevation */}
+<<<<<<< HEAD
       {!isAnalyticsView && (
         <AnimatePresence mode="wait">
           <motion.div
@@ -2106,6 +2117,17 @@ export default function Home() {
             exit="hidden"
             className="w-full max-w-3xl space-y-5 z-10 pb-20"
           >
+=======
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={isCollectionsView ? 'collections' : 'results'}
+          variants={listVariants}
+          initial="hidden"
+          animate="visible"
+          exit="hidden"
+          className="w-full max-w-3xl space-y-5 z-10 pb-20"
+        >
+>>>>>>> origin/main
         {displayResults.map((r, index) => {
           const keywords = extractKeywords(r.content);
           const isHovered = hoveredCardId === r.id;
@@ -2133,6 +2155,7 @@ export default function Home() {
               
               {/* Main card with depth hierarchy */}
               <div
+<<<<<<< HEAD
                 className={`relative ${
                   isDawn 
                     ? 'glass-result-card-dawn' 
@@ -2150,6 +2173,26 @@ export default function Home() {
                       : 'neon-border-card'
                     : ''
                 }`}
+=======
+                className={`relative backdrop-blur-3xl border-2 rounded-[1.5rem] p-6 transition-all duration-300 overflow-hidden ${
+                  isDawn
+                    ? isHovered
+                      ? 'bg-white border-purple-200 shadow-2xl shadow-purple-200/70 translate-y-[-4px]'
+                      : 'bg-white border-slate-200 shadow-lg shadow-slate-200/70'
+                    : isHovered
+                      ? 'bg-gradient-to-br from-slate-900/90 via-slate-950 to-black border-purple-500/60 shadow-2xl translate-y-[-2px]'
+                      : 'bg-gradient-to-br from-black via-slate-950 to-slate-900 border-slate-800/80 shadow-xl'
+                } ${isDawn ? 'neon-border-card-dawn' : 'neon-border-card'}`}
+                style={{
+                  boxShadow: isDawn
+                    ? isHovered
+                      ? '0 20px 50px rgba(148,163,184,0.45)'
+                      : '0 12px 30px rgba(148,163,184,0.35)'
+                    : isHovered
+                      ? '0 24px 80px rgba(15,23,42,0.95), 0 0 0 1px rgba(168,85,247,0.55), inset 0 1px 0 rgba(248,250,252,0.16)'
+                      : '0 18px 60px rgba(15,23,42,0.9), 0 0 0 1px rgba(15,23,42,0.85), inset 0 1px 0 rgba(148,163,184,0.2)'
+                }}
+>>>>>>> origin/main
                 onClick={(e) => handleCardClick(e, r.id)}
               >
                 {/* Ripple effect */}
@@ -2363,6 +2406,7 @@ export default function Home() {
                       }`}
                     >
                       <div
+<<<<<<< HEAD
                         className={`relative p-4 backdrop-blur-xl border rounded-xl overflow-hidden ${
                           isDawn
                             ? 'bg-gradient-to-br from-white/95 via-purple-50/70 to-cyan-50/70 border-white/80 shadow-[0_25px_60px_rgba(168,85,247,0.18)]'
@@ -2376,6 +2420,15 @@ export default function Home() {
                           </div>
                         )}
                         <div className="space-y-3 text-sm relative z-10">
+=======
+                        className={`p-4 backdrop-blur-xl border rounded-xl overflow-hidden ${
+                          isDawn
+                            ? 'bg-slate-50 border-slate-200'
+                            : 'bg-gradient-to-br from-slate-900/90 to-slate-800/90 border-white/20'
+                        }`}
+                      >
+                        <div className="space-y-3 text-sm">
+>>>>>>> origin/main
                           {/* Summary */}
                           <div>
                             <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
@@ -2508,16 +2561,38 @@ export default function Home() {
         )}
         </motion.div>
       </AnimatePresence>
+<<<<<<< HEAD
     )}
+=======
+>>>>>>> origin/main
 
       {/* Settings Modal */}
       {showSettings && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-md animate-fade-in">
           <div
+<<<<<<< HEAD
             className={`relative w-full max-w-md glass-aurora-panel ${
               isDawn ? 'glass-aurora-panel-dawn' : 'glass-aurora-panel-dark'
             } rounded-[2rem] shadow-2xl animate-slide-up`}
           >
+=======
+            className={`relative w-full max-w-md backdrop-blur-2xl rounded-[2rem] shadow-2xl animate-slide-up border ${
+              isDawn
+                ? 'bg-white/90 border-slate-200 shadow-slate-300/70'
+                : 'bg-gradient-to-br from-black via-slate-950 to-slate-900 border-slate-700/80 shadow-[0_30px_120px_rgba(0,0,0,0.95)]'
+            }`}
+          >
+            {/* Close button */}
+            <button
+              onClick={() => setShowSettings(false)}
+              className="absolute top-4 right-4 p-2 rounded-[0.75rem] hover:bg-white/10 transition-colors"
+            >
+              <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+
+>>>>>>> origin/main
             {/* Header */}
             <div className="p-6 border-b border-white/10 flex items-start justify-between gap-3">
               <div>
