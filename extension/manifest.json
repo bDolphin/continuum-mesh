@@ -1,17 +1,21 @@
 {
   "manifest_version": 3,
-  "name": "Context Mesh Memory Capture",
-  "version": "0.1.0",
-  "description": "Captures conversations from Perplexity, ChatGPT, and Claude for local memory storage",
+  "name": "Context Memory Mesh",
+  "version": "0.2.0",
+  "description": "Automatically capture and remember everything across ChatGPT, Perplexity, and your browser",
   "permissions": [
     "storage",
-    "activeTab"
+    "activeTab",
+    "contextMenus",
+    "scripting",
+    "alarms"
   ],
   "host_permissions": [
     "https://www.perplexity.ai/*",
     "https://chatgpt.com/*",
     "https://chat.openai.com/*",
     "https://claude.ai/*",
+    "https://*.openai.com/*",
     "http://localhost:2789/*",
     "http://127.0.0.1:2789/*"
   ],
@@ -21,16 +25,25 @@
   "content_scripts": [
     {
       "matches": ["https://www.perplexity.ai/*"],
-      "js": ["content/perplexity.js"],
-      "run_at": "document_idle"
+      "js": ["utils/detector.js", "utils/storage.js", "utils/api.js", "content/perplexity.js"],
+      "run_at": "document_end",
+      "all_frames": true
     },
     {
       "matches": [
         "https://chatgpt.com/*",
-        "https://chat.openai.com/*"
+        "https://chat.openai.com/*",
+        "https://*.openai.com/*"
       ],
-      "js": ["content/chatgpt.js"],
-      "run_at": "document_idle"
+      "js": ["utils/detector.js", "utils/storage.js", "utils/api.js", "content/chatgpt.js"],
+      "run_at": "document_end",
+      "all_frames": true
+    },
+    {
+      "matches": ["<all_urls>"],
+      "js": ["utils/detector.js", "utils/storage.js", "content/content-script.js"],
+      "run_at": "document_start",
+      "all_frames": false
     }
   ],
   "action": {
@@ -39,11 +52,28 @@
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
-    }
+    },
+    "default_title": "Context Memory Mesh - Store & Recall Memories"
   },
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
+  },
+  "commands": {
+    "store-memory": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+M",
+        "mac": "Command+Shift+M"
+      },
+      "description": "Store selected text to memory"
+    },
+    "recall-memory": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+R",
+        "mac": "Command+Shift+R"
+      },
+      "description": "Search memory"
+    }
   }
 }

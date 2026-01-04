@@ -3,3 +3,12 @@ daemon/__pycache__/
 **/__pycache__/
 ui/node_modules/
 ui/.next/
+/.venv/
+.env
+*.pyc
+.DS_Store
+.vscode/
+.idea/
+coverage/
+htmlcov/
+.pytest_cache/

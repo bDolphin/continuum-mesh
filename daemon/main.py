@@ -2,9 +2,10 @@
 FastAPI Memory Daemon
 Location: daemon/main.py
 """
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, ValidationError, ConfigDict
 from typing import List, Optional
 from memory_store import MemoryStore
 import hashlib
@@ -72,6 +73,17 @@ config = Config()
 
 app = FastAPI(title="Memory Daemon API")
 
+# Custom exception handler for validation errors
+@app.exception_handler(ValidationError)
+async def validation_exception_handler(request: Request, exc: ValidationError):
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": exc.errors(),
+            "body": await request.body()
+        },
+    )
+
 # CORS for browser extension and local dashboard
 app.add_middleware(
     CORSMiddleware,
@@ -91,6 +103,8 @@ class StoreRequest(BaseModel):
     url: Optional[str] = None
     conversation_id: Optional[str] = None
     message_type: Optional[str] = None
+    
+    model_config = ConfigDict(extra='ignore')  # Ignore extra fields from frontend
 
 
 class RecallRequest(BaseModel):
@@ -98,12 +112,16 @@ class RecallRequest(BaseModel):
     n_results: int = 10
     source_app: Optional[str] = None
     tags: Optional[List[str]] = None
+    
+    model_config = ConfigDict(extra='ignore')
 
 
 class ConfigUpdateRequest(BaseModel):
     embedding_mode: str
     openai_api_key: Optional[str] = None
     persist: bool = True
+    
+    model_config = ConfigDict(extra='ignore')
 
 
 def get_testing_embedding(text: str) -> List[float]:
@@ -244,7 +262,7 @@ async def recall_memory(
             ]
             return {
                 "success": True,
-                "results": results,
+                "memories": results,
             }
         
         query_embedding = get_embedding(query)
@@ -268,7 +286,7 @@ async def recall_memory(
 
         return {
             "success": True,
-            "results": formatted_results,
+            "memories": formatted_results,
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

@@ -1,0 +1,362 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Context Memory Mesh API",
+    "description": "Cross-tool memory layer for AI assistants. Store and recall context across ChatGPT, Perplexity, Cursor, and VSCode.",
+    "version": "1.0.0",
+    "contact": {
+      "name": "Context Memory Mesh",
+      "url": "https://github.com/bDolphin/continuum-mesh"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:2789",
+      "description": "Local Development Server"
+    },
+    {
+      "url": "https://memory-mesh.example.com",
+      "description": "Production Server (when deployed)"
+    }
+  ],
+  "paths": {
+    "/store": {
+      "post": {
+        "operationId": "storeMemory",
+        "summary": "Store a memory to the context mesh",
+        "description": "Captures text, context metadata, and tags to persistent memory store. Returns memory ID for future reference.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string",
+                    "description": "The content to remember. Can be code, documentation, research findings, or conversation context.",
+                    "example": "Vector databases use embeddings for semantic search. ChromaDB is a popular open-source option."
+                  },
+                  "source_app": {
+                    "type": "string",
+                    "enum": ["chatgpt", "perplexity", "cursor", "vscode", "chrome", "web"],
+                    "description": "Where the memory originated",
+                    "example": "chatgpt"
+                  },
+                  "context_type": {
+                    "type": "string",
+                    "enum": ["code", "research", "chat", "documentation", "email"],
+                    "description": "Type of context being stored",
+                    "example": "research"
+                  },
+                  "tags": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Auto-generated or custom tags for filtering and discovery",
+                    "example": ["vector-databases", "embeddings", "chromadb"]
+                  },
+                  "url": {
+                    "type": "string",
+                    "format": "uri",
+                    "description": "Source URL where the memory was captured",
+                    "example": "https://www.perplexity.ai/search/vector-databases"
+                  },
+                  "metadata": {
+                    "type": "object",
+                    "description": "Additional context: conversation IDs, citations, source links, etc.",
+                    "example": {
+                      "conversation_id": "chat_abc123",
+                      "citations": [1, 2, 3],
+                      "sources": ["https://docs.example.com"],
+                      "project": "my-rag-system"
+                    }
+                  }
+                },
+                "required": ["text", "source_app"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Memory successfully stored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "description": "Unique memory identifier (UUID)",
+                      "example": "550e8400-e29b-41d4-a716-446655440000"
+                    },
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Memory stored successfully"
+                    },
+                    "timestamp": {
+                      "type": "string",
+                      "format": "date-time",
+                      "example": "2025-12-14T10:30:00Z"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request (missing required fields)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "example": "Missing required field: text"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/recall": {
+      "get": {
+        "operationId": "recallMemory",
+        "summary": "Recall relevant memories based on query",
+        "description": "Performs semantic search across stored memories using vector embeddings. Returns most relevant results ranked by similarity.",
+        "parameters": [
+          {
+            "name": "query",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Search query (natural language)",
+            "example": "How do I implement vector embeddings?"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 5,
+              "minimum": 1,
+              "maximum": 20
+            },
+            "description": "Max number of results to return",
+            "example": 5
+          },
+          {
+            "name": "source_app",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["chatgpt", "perplexity", "cursor", "vscode", "chrome"]
+            },
+            "description": "Filter results by source application",
+            "example": "chatgpt"
+          },
+          {
+            "name": "context_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["code", "research", "chat", "documentation", "email"]
+            },
+            "description": "Filter results by context type",
+            "example": "code"
+          },
+          {
+            "name": "tag",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter results by tag",
+            "example": "vector-databases"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Relevant memories retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "query": {
+                      "type": "string",
+                      "example": "vector embeddings"
+                    },
+                    "memories": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "description": "Memory ID"
+                          },
+                          "text": {
+                            "type": "string",
+                            "description": "Memory content"
+                          },
+                          "source_app": {
+                            "type": "string",
+                            "description": "Where memory came from"
+                          },
+                          "context_type": {
+                            "type": "string",
+                            "description": "Type of context"
+                          },
+                          "tags": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "url": {
+                            "type": "string",
+                            "format": "uri"
+                          },
+                          "similarity": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 1,
+                            "description": "Cosine similarity score (0-1)"
+                          },
+                          "timestamp": {
+                            "type": "string",
+                            "format": "date-time",
+                            "description": "When memory was stored"
+                          }
+                        }
+                      },
+                      "description": "List of relevant memories ranked by relevance"
+                    },
+                    "total_memories": {
+                      "type": "integer",
+                      "description": "Total memories in store",
+                      "example": 147
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing or invalid query parameter"
+          }
+        }
+      }
+    },
+    "/config": {
+      "get": {
+        "operationId": "getConfig",
+        "summary": "Get daemon configuration and status",
+        "description": "Returns current embedding mode, memory count, and health status",
+        "responses": {
+          "200": {
+            "description": "Configuration retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "embedding_mode": {
+                      "type": "string",
+                      "enum": ["openai", "testing"],
+                      "description": "Current embedding generation mode",
+                      "example": "openai"
+                    },
+                    "memory_count": {
+                      "type": "integer",
+                      "description": "Total memories stored",
+                      "example": 147
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": ["healthy", "degraded", "offline"],
+                      "example": "healthy"
+                    },
+                    "version": {
+                      "type": "string",
+                      "example": "0.2.0"
+                    },
+                    "uptime_seconds": {
+                      "type": "integer",
+                      "description": "Seconds since daemon started",
+                      "example": 3600
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/": {
+      "get": {
+        "operationId": "healthCheck",
+        "summary": "Health check endpoint",
+        "responses": {
+          "200": {
+            "description": "Daemon is healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "ok"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Optional: Use Bearer token for remote deployments"
+      }
+    }
+  },
+  "security": [],
+  "tags": [
+    {
+      "name": "Memory Operations",
+      "description": "Store and recall memories"
+    },
+    {
+      "name": "Configuration",
+      "description": "Daemon configuration and status"
+    }
+  ]
+}
