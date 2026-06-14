@@ -12,3 +12,10 @@ ui/.next/
 coverage/
 htmlcov/
 .pytest_cache/
+
+# Runtime data & generated artifacts (not source)
+daemon/chroma_db/
+daemon/daemon.log
+*.log
+daemon/monitoring/reports/
+daemon/eval/probes.json

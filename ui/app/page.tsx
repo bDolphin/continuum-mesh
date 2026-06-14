@@ -118,7 +118,8 @@ export default function Home() {
         }
 
         const data = await res.json();
-        const backendResults: MemoryResult[] = data.results ?? [];
+        // Daemon returns { success, memories: [...] }, not `results`.
+        const backendResults: MemoryResult[] = data.memories ?? data.results ?? [];
         setAnalyticsMemories(backendResults);
       } catch (err: any) {
         setAnalyticsError(err.message ?? "Unknown error");
@@ -567,7 +568,8 @@ export default function Home() {
       const data = await res.json();
 
       const trimmedQuery = query.trim().toLowerCase();
-      const backendResults: MemoryResult[] = data.results ?? [];
+      // Daemon returns { success, memories: [...] }, not `results`.
+      const backendResults: MemoryResult[] = data.memories ?? data.results ?? [];
 
       // Start from backend results
       let filteredResults = backendResults;
@@ -660,7 +662,7 @@ export default function Home() {
 
           if (fallbackRes.ok) {
             const fallbackData = await fallbackRes.json();
-            const allResults: MemoryResult[] = fallbackData.results ?? [];
+            const allResults: MemoryResult[] = fallbackData.memories ?? fallbackData.results ?? [];
 
             let lexicalResults = allResults.filter((r: MemoryResult) =>
               r.content.toLowerCase().includes(trimmedQuery)

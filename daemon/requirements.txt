@@ -6,17 +6,24 @@ uvicorn[standard]
 pydantic
 python-dotenv
 
-# Vector store (local-first)
-chromadb
+# Vector math (persistent SQLite store does cosine in numpy)
+numpy
 
-# DB / metadata (optional Postgres + pgvector)
-sqlalchemy
-psycopg[binary]
+# --- Local-first embeddings: install ONE of these ---
+# Best quality (needs torch; use Python 3.12 if torch has no 3.14 wheel yet):
+sentence-transformers
+# No-torch fallback, installs cleanly on Python 3.14:
+model2vec
 
-# HTTP + embeddings (OpenAI, etc.)
+# HTTP + embeddings (OpenAI mode, optional)
 httpx
 openai
 
 # Utilities
 orjson
 loguru
+
+# NOTE: chromadb was removed from the hot path. The SQLite store in
+# memory_store.py persists locally with zero external services and works on
+# Python 3.14. To graduate to Chroma/Qdrant later, implement the same
+# MemoryStore interface behind a feature flag — the daemon won't need changes.

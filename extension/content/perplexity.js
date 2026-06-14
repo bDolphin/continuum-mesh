@@ -27,6 +27,44 @@ function debounce(func, wait) {
 }
 
 /**
+ * Recall memories by calling the local daemon DIRECTLY from the content script.
+ *
+ * Why not go through the background service worker?
+ * In Manifest V3 the worker is suspended when idle and can be torn down mid-
+ * request, which silently drops its sendResponse — that's the 20s "Memory
+ * search timeout" you saw. Chrome treats http://localhost / http://127.0.0.1 as
+ * a trustworthy origin, so an https page like perplexity.ai is allowed to fetch
+ * it with no mixed-content block (the daemon is also in host_permissions).
+ *
+ * Returns { memories: [...] } and never throws — callers get [] on any failure.
+ */
+const DAEMON_URL = 'http://localhost:2789';
+async function recallFromDaemon(query, limit = 5, timeoutMs = 8000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const params = new URLSearchParams({ query: query, n_results: String(limit) });
+    const res = await fetch(`${DAEMON_URL}/recall?${params}`, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
+    });
+    if (!res.ok) throw new Error(`Daemon HTTP ${res.status}`);
+    const data = await res.json();
+    return { memories: data.memories || [] };
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      console.warn('⏱️ Recall timed out (daemon slow or not running)');
+    } else {
+      console.warn('Recall failed:', error.message);
+    }
+    return { memories: [] };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
  * Extract research findings with citations and sources
  */
 function extractResearchFindings() {
@@ -310,46 +348,19 @@ async function updateResearchSidebar() {
   if (!query || query === lastQuery) return;
   
   lastQuery = query;
-  
+
   try {
-    if (!chrome.runtime) {
-      console.warn('Extension context invalidated');
-      return;
-    }
-    
     const startTime = Date.now();
     console.log('🔍 Searching memories for query:', query.substring(0, 50) + '...');
-    
-    const response = await new Promise((resolve, reject) => {
-      const timeoutId = setTimeout(() => {
-        reject(new Error('Memory search timeout (20s) - daemon may be busy or unresponsive'));
-      }, 20000); // Increased to 20 seconds
-      
-      chrome.runtime.sendMessage(
-        {
-          type: 'RECALL_MEMORIES',
-          data: {
-            text: query,
-            limit: 5,
-          },
-        },
-        (response) => {
-          clearTimeout(timeoutId);
-          if (chrome.runtime.lastError) {
-            reject(chrome.runtime.lastError);
-          } else {
-            const elapsed = Date.now() - startTime;
-            console.log(`✅ Memory search completed in ${elapsed}ms`);
-            resolve(response);
-          }
-        }
-      );
-    });
-    
-    const memories = response?.data?.memories || [];
+
+    // Call the daemon directly — avoids the MV3 service-worker suspend/timeout bug.
+    const response = await recallFromDaemon(query, 5);
+    console.log(`✅ Memory search completed in ${Date.now() - startTime}ms`);
+
+    const memories = response?.memories || [];
     const container = document.getElementById('research-memories');
     if (!container) return;
-    
+
     if (memories.length === 0) {
       container.innerHTML = '<div style="font-size: 12px; opacity: 0.7;">No related memories yet</div>';
       return;
@@ -411,44 +422,17 @@ const searchResearchMemories = debounce(async function(query) {
   }
   
   try {
-    if (!chrome.runtime) {
-      console.warn('Extension context invalidated');
-      return;
-    }
-    
     const startTime = Date.now();
     console.log('🔍 Searching memories for query:', query.substring(0, 50) + '...');
-    
-    const response = await new Promise((resolve, reject) => {
-      const timeoutId = setTimeout(() => {
-        reject(new Error('Memory search timeout (20s) - daemon may be busy or unresponsive'));
-      }, 20000); // Increased to 20 seconds
-      
-      chrome.runtime.sendMessage(
-        {
-          type: 'RECALL_MEMORIES',
-          data: {
-            text: query,
-            limit: 5,
-          },
-        },
-        (response) => {
-          clearTimeout(timeoutId);
-          if (chrome.runtime.lastError) {
-            reject(chrome.runtime.lastError);
-          } else {
-            const elapsed = Date.now() - startTime;
-            console.log(`✅ Memory search completed in ${elapsed}ms`);
-            resolve(response);
-          }
-        }
-      );
-    });
-    
-    const memories = response?.data?.memories || [];
+
+    // Call the daemon directly — avoids the MV3 service-worker suspend/timeout bug.
+    const response = await recallFromDaemon(query, 5);
+    console.log(`✅ Memory search completed in ${Date.now() - startTime}ms`);
+
+    const memories = response?.memories || [];
     const container = document.getElementById('research-memories');
     if (!container) return;
-    
+
     if (memories.length === 0) {
       container.innerHTML = '<div style="opacity: 0.7; font-size: 12px;">No results</div>';
       return;
