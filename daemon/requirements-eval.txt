@@ -1,0 +1,5 @@
+# OPTIONAL evaluation/monitoring extras — only needed to turn on Evidently.
+# Core daemon does NOT require these. Install when you want rich reports / CI gating:
+#     pip install -r requirements-eval.txt
+evidently>=0.7,<0.8
+pandas

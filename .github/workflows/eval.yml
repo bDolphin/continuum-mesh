@@ -1,0 +1,58 @@
+name: retrieval-eval
+
+# Quality gate for the memory retrieval layer. Runs on every push/PR that
+# touches the daemon, fails the build if precision@k / MRR drop below the
+# thresholds in daemon/monitoring/thresholds.json, and uploads the Evidently
+# report as a downloadable artifact.
+
+on:
+  push:
+    paths: ["daemon/**", ".github/workflows/eval.yml"]
+  pull_request:
+    paths: ["daemon/**", ".github/workflows/eval.yml"]
+  workflow_dispatch: {}   # allow manual runs
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    env:
+      EMBEDDING_MODE: local          # uses model2vec below (no torch, fast in CI)
+      EVIDENTLY_ENABLED: "1"         # the flag — flip to "0" to skip Evidently
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"     # clean wheels for everything
+
+      - name: Install dependencies
+        working-directory: daemon
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install model2vec            # light local embeddings for CI
+          pip install -r requirements-eval.txt   # evidently (the optional extra)
+
+      - name: Start daemon
+        working-directory: daemon
+        run: |
+          python main.py > daemon.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:2789/health && break || sleep 2
+          done
+
+      - name: Seed memories + generate probes
+        working-directory: daemon
+        run: python seed_demo.py
+
+      - name: Evaluate + gate (+ Evidently report)
+        working-directory: daemon
+        run: python scripts/monitor_eval.py --evidently
+
+      - name: Upload Evidently report
+        if: always()                  # keep the report even when the gate fails
+        uses: actions/upload-artifact@v4
+        with:
+          name: evidently-eval-report
+          path: daemon/monitoring/reports/
+          if-no-files-found: ignore
