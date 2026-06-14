@@ -1,0 +1,4 @@
+{
+  "enabled_connectors": ["chatgpt", "perplexity"],
+  "_comment": "Add 'slack' (or any registered connector) to plug it in; remove a name to plug it out. No code change required."
+}
