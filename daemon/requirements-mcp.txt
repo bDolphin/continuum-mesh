@@ -1,0 +1,4 @@
+# OPTIONAL — only needed to run the MCP server (Cycle 5).
+# The core daemon does not require this.
+#     pip install -r requirements-mcp.txt
+mcp>=1.2.0
