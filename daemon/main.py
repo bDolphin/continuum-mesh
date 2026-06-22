@@ -26,6 +26,7 @@ from dotenv import load_dotenv, set_key
 
 from memory_store import MemoryStore
 from embeddings import build_provider
+from ranker import Ranker, RankerConfig
 
 import json
 import connectors  # noqa: F401  (importing registers all connectors)
@@ -111,6 +112,26 @@ store = MemoryStore(persist_directory=str(Path(__file__).parent / "chroma_db"))
 # Pluggable connectors (seam #3). Plug in/out via config.json — no code change.
 CONNECTORS = _load_enabled_connectors()
 
+# Composite ranker (Cycle 2). Mode via RANKER env or ranker.json.
+ranker = Ranker(RankerConfig.load(str(Path(__file__).parent / "ranker.json")))
+print(f"🏅 ranker mode: {ranker.cfg.mode}  weights={ranker.cfg.weights}")
+
+
+def search(query: str, top_k: int, source_app: Optional[str] = None):
+    """
+    Shared retrieval path for BOTH /recall and /evaluate so the eval gate
+    measures exactly what users get: embed -> cosine candidate pool -> rerank.
+    """
+    emb = config.provider.embed(query)
+    pool = ranker.candidate_pool_size(top_k)
+    candidates = store.recall(
+        query_embedding=emb.vector,
+        n_results=pool,
+        source_app=source_app,
+        query_model=emb.model_id,
+    )
+    return ranker.rerank(candidates, query, top_k)
+
 
 # --------------------------------------------------------------------------- #
 # Schemas
@@ -167,6 +188,7 @@ async def get_config():
     return {
         "embedding_mode": config.embedding_mode,
         "embedding_model": config.model_id,
+        "ranker": ranker.info(),
         "openai_configured": bool(config.openai_api_key),
         "available_modes": ["local", "openai", "hash"],
         "info": {
@@ -271,18 +293,19 @@ async def recall_memory(
             ]
             return {"success": True, "memories": results}
 
-        emb = config.provider.embed(query)
-        results = store.recall(
-            query_embedding=emb.vector,
-            n_results=top_k,
-            source_app=source_app,
-            query_model=emb.model_id,  # only compare within the same embedding space
-        )
+        results = search(query, top_k, source_app=source_app)
         formatted = [
-            {"id": r["id"], "content": r["text"], "score": r["score"], "metadata": r["metadata"]}
+            {
+                "id": r["id"],
+                "content": r["text"],
+                "score": r.get("rank_score", r.get("score", 0.0)),
+                "cosine": r.get("score", 0.0),
+                "rank_components": r.get("rank_components"),
+                "metadata": r["metadata"],
+            }
             for r in results
         ]
-        return {"success": True, "memories": formatted}
+        return {"success": True, "ranker": ranker.cfg.mode, "memories": formatted}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -320,10 +343,7 @@ async def evaluate(req: EvaluateRequest):
     precisions, rr = [], []
     per_probe = []
     for p in req.probes:
-        emb = config.provider.embed(p.query)
-        hits = store.recall(
-            query_embedding=emb.vector, n_results=k, query_model=emb.model_id
-        )
+        hits = search(p.query, k)  # same path as /recall: includes the ranker
         ranked_ids = [h["id"] for h in hits]
         relevant = set(p.relevant_ids)
 
@@ -351,6 +371,7 @@ async def evaluate(req: EvaluateRequest):
     return {
         "success": True,
         "embedding_model": config.model_id,
+        "ranker": ranker.cfg.mode,
         "k": k,
         "mean_precision_at_k": round(sum(precisions) / n, 3),
         "mean_reciprocal_rank": round(sum(rr) / n, 3),

@@ -1,0 +1,18 @@
+{
+  "mode": "heuristic",
+  "half_life_days": 14.0,
+  "fetch_multiplier": 5,
+  "weights": {
+    "similarity": 0.6,
+    "recency": 0.2,
+    "source_priority": 0.1,
+    "tag_match": 0.1
+  },
+  "source_priority": {
+    "perplexity": 1.0,
+    "chatgpt": 0.95,
+    "claude": 0.95,
+    "slack": 0.8
+  },
+  "_comment": "mode: cosine|heuristic (env RANKER overrides). Tune weights, then re-run scripts/run_eval.py to prove the change helps before keeping it."
+}
