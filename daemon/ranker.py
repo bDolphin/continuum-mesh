@@ -12,6 +12,9 @@ candidate pool with a weighted blend:
 Modes (RANKER env var, or ranker.json "mode"):
     "cosine"     -> passthrough: original similarity order (the baseline)
     "heuristic"  -> the weighted blend above  [default]
+    "learned"    -> weights learned from logged recall-acceptance feedback
+                    (ranker_model.json, produced by scripts/train_ranker.py);
+                    falls back to heuristic if no model file is present.
 
 Everything is config-driven (ranker.json) and degrades gracefully: missing
 timestamps => neutral recency, unknown source => neutral priority, no tags =>
@@ -46,15 +49,19 @@ def _parse_ts(ts: Optional[str]) -> Optional[datetime]:
         return None
 
 
+FEATURES = ("similarity", "recency", "source_priority", "tag_match")
+
+
 @dataclass
 class RankerConfig:
-    mode: str = "heuristic"                 # "cosine" | "heuristic"
+    mode: str = "heuristic"                 # "cosine" | "heuristic" | "learned"
     half_life_days: float = 14.0            # recency decay
     fetch_multiplier: int = 5               # candidate pool = top_k * this (min 20)
     weights: Dict[str, float] = field(default_factory=lambda: {
         "similarity": 0.6, "recency": 0.2, "source_priority": 0.1, "tag_match": 0.1,
     })
     source_priority: Dict[str, float] = field(default_factory=dict)  # name -> 0..1 (default 1.0)
+    model: Optional[Dict] = None            # learned model: {"bias": x, "coef": {feat: w}}
 
     @classmethod
     def load(cls, path: Optional[str] = None) -> "RankerConfig":
@@ -74,6 +81,20 @@ class RankerConfig:
         # normalize weights to sum 1
         total = sum(cfg.weights.values()) or 1.0
         cfg.weights = {k: v / total for k, v in cfg.weights.items()}
+
+        # learned mode: load the trained model sibling to ranker.json
+        if cfg.mode == "learned":
+            model_path = os.path.join(os.path.dirname(path or "."), "ranker_model.json")
+            if os.path.exists(model_path):
+                try:
+                    cfg.model = json.loads(open(model_path).read())
+                except Exception as e:
+                    print(f"⚠️  ranker_model.json unreadable ({e}); falling back to heuristic")
+                    cfg.mode = "heuristic"
+            else:
+                print("ℹ️  RANKER=learned but no ranker_model.json yet; using heuristic. "
+                      "Collect feedback then run scripts/train_ranker.py.")
+                cfg.mode = "heuristic"
         return cfg
 
 
@@ -100,6 +121,14 @@ class Ranker:
         hits = sum(1 for t in tags if _tokens(t) & query_tokens)
         return min(1.0, hits / len(tags))
 
+    def _learned_score(self, comp: Dict[str, float]) -> float:
+        """Logistic model: sigmoid(bias + Σ coef_f · feature_f)."""
+        model = self.cfg.model or {}
+        bias = float(model.get("bias", 0.0))
+        coef = model.get("coef", {})
+        z = bias + sum(float(coef.get(f, 0.0)) * comp.get(f, 0.0) for f in FEATURES)
+        return 1.0 / (1.0 + math.exp(-max(-60.0, min(60.0, z))))
+
     # --- main entry ---
     def rerank(self, candidates: List[Dict], query: str, top_k: int) -> List[Dict]:
         if self.cfg.mode == "cosine":
@@ -111,6 +140,7 @@ class Ranker:
         now = datetime.now(timezone.utc)
         qtok = _tokens(query)
         w = self.cfg.weights
+        learned = self.cfg.mode == "learned"
         for c in candidates:
             md = c.get("metadata", {})
             comp = {
@@ -120,7 +150,10 @@ class Ranker:
                 "tag_match": self._tag_match(c, qtok),
             }
             c["rank_components"] = {k: round(v, 4) for k, v in comp.items()}
-            c["rank_score"] = round(sum(w[k] * comp[k] for k in w), 6)
+            if learned:
+                c["rank_score"] = round(self._learned_score(comp), 6)
+            else:
+                c["rank_score"] = round(sum(w[k] * comp[k] for k in w), 6)
 
         candidates.sort(key=lambda x: x["rank_score"], reverse=True)
         return candidates[:top_k]

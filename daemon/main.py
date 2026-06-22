@@ -29,6 +29,7 @@ from embeddings import build_provider
 from ranker import Ranker, RankerConfig
 
 import json
+import uuid
 import connectors  # noqa: F401  (importing registers all connectors)
 from core.registry import build_enabled, available
 from core.pipeline import ingest
@@ -162,6 +163,12 @@ class EvalProbe(BaseModel):
 class EvaluateRequest(BaseModel):
     probes: List[EvalProbe]
     k: int = 5
+    model_config = ConfigDict(extra="ignore")
+
+
+class FeedbackRequest(BaseModel):
+    memory_id: str               # the candidate the user acted on (positive signal)
+    recall_id: Optional[str] = None  # ties it to a specific recall (optional)
     model_config = ConfigDict(extra="ignore")
 
 
@@ -305,9 +312,32 @@ async def recall_memory(
             }
             for r in results
         ]
-        return {"success": True, "ranker": ranker.cfg.mode, "memories": formatted}
+        # Log the shown set for the learned ranker's training data (Cycle 2b).
+        recall_id = str(uuid.uuid4())
+        try:
+            store.log_recall(recall_id, query, results)
+        except Exception as e:
+            print(f"⚠️  recall logging failed: {e}")
+        return {"success": True, "ranker": ranker.cfg.mode,
+                "recall_id": recall_id, "memories": formatted}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/feedback")
+async def feedback(req: FeedbackRequest):
+    """
+    Record that a recalled memory was actually used — the positive label the
+    learned ranker (RANKER=learned) trains on. Call from the extension when a
+    user clicks/inserts a recalled item.
+    """
+    updated = store.mark_accepted(req.memory_id, req.recall_id)
+    return {"success": True, "updated": updated}
+
+
+@app.get("/feedback/stats")
+async def feedback_stats():
+    return {"success": True, **store.recall_event_stats()}
 
 
 @app.delete("/memory/{memory_id}")

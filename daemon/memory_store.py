@@ -65,6 +65,22 @@ class MemoryStore:
             CREATE INDEX IF NOT EXISTS idx_source ON memories(source_app);
             CREATE INDEX IF NOT EXISTS idx_model  ON memories(embed_model);
             CREATE INDEX IF NOT EXISTS idx_ts     ON memories(timestamp);
+
+            -- Implicit-feedback log for the learned ranker (Cycle 2b).
+            -- One row per candidate SHOWN for a recall; accepted=1 when the
+            -- user later acts on it. Training reads (features -> accepted).
+            CREATE TABLE IF NOT EXISTS recall_events (
+                id          TEXT PRIMARY KEY,
+                recall_id   TEXT NOT NULL,   -- groups the candidates of one query
+                ts          TEXT NOT NULL,
+                query       TEXT,
+                memory_id   TEXT,
+                rank        INTEGER,
+                features    TEXT,            -- json: similarity/recency/source/tag
+                accepted    INTEGER DEFAULT 0
+            );
+            CREATE INDEX IF NOT EXISTS idx_re_recall ON recall_events(recall_id);
+            CREATE INDEX IF NOT EXISTS idx_re_mem    ON recall_events(memory_id);
             """
         )
         self._migrate_columns()
@@ -294,6 +310,64 @@ class MemoryStore:
             migrated += 1
         self._conn.commit()
         return {"migrated": migrated, "skipped": self.count() - migrated, "target_model": target_model_id}
+
+    # ------------------------------------------------------------------ #
+    # Implicit-feedback logging for the learned ranker (Cycle 2b)
+    # ------------------------------------------------------------------ #
+    def log_recall(self, recall_id: str, query: str, shown: List[Dict]) -> None:
+        """Log every candidate shown for a recall, with its ranker features."""
+        import json as _json
+        ts = datetime.now(timezone.utc).isoformat()
+        rows = []
+        for rank, c in enumerate(shown, start=1):
+            rows.append((
+                str(uuid.uuid4()), recall_id, ts, query, c.get("id"), rank,
+                _json.dumps(c.get("rank_components") or {}), 0,
+            ))
+        self._conn.executemany(
+            """INSERT INTO recall_events
+               (id, recall_id, ts, query, memory_id, rank, features, accepted)
+               VALUES (?,?,?,?,?,?,?,?)""",
+            rows,
+        )
+        self._conn.commit()
+
+    def mark_accepted(self, memory_id: str, recall_id: Optional[str] = None) -> int:
+        """Mark a shown candidate as accepted (the positive training signal)."""
+        if recall_id:
+            cur = self._conn.execute(
+                "UPDATE recall_events SET accepted=1 WHERE memory_id=? AND recall_id=?",
+                (memory_id, recall_id),
+            )
+        else:
+            # most recent event for this memory_id
+            cur = self._conn.execute(
+                "UPDATE recall_events SET accepted=1 WHERE id = ("
+                "  SELECT id FROM recall_events WHERE memory_id=? ORDER BY ts DESC LIMIT 1)",
+                (memory_id,),
+            )
+        self._conn.commit()
+        return cur.rowcount
+
+    def training_rows(self) -> List[Dict]:
+        """Return logged events with parsed features for offline training."""
+        import json as _json
+        out = []
+        for r in self._conn.execute(
+            "SELECT features, accepted FROM recall_events WHERE features != '{}'"
+        ).fetchall():
+            try:
+                feats = _json.loads(r["features"])
+            except Exception:
+                continue
+            if feats:
+                out.append({"features": feats, "accepted": int(r["accepted"])})
+        return out
+
+    def recall_event_stats(self) -> Dict:
+        total = self._conn.execute("SELECT COUNT(*) c FROM recall_events").fetchone()["c"]
+        pos = self._conn.execute("SELECT COUNT(*) c FROM recall_events WHERE accepted=1").fetchone()["c"]
+        return {"events": total, "accepted": pos}
 
     # ------------------------------------------------------------------ #
     @staticmethod

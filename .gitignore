@@ -19,3 +19,4 @@ daemon/daemon.log
 *.log
 daemon/monitoring/reports/
 daemon/eval/probes.json
+daemon/ranker_model.json
