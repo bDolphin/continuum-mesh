@@ -35,7 +35,13 @@
         "https://chat.openai.com/*",
         "https://*.openai.com/*"
       ],
-      "js": ["utils/detector.js", "utils/storage.js", "utils/api.js", "content/chatgpt.js"],
+      "js": [
+        "utils/detector.js",
+        "utils/storage.js",
+        "utils/api.js",
+        "content/autoInject.js",
+        "content/chatgpt.js"
+      ],
       "run_at": "document_end",
       "all_frames": true
     },

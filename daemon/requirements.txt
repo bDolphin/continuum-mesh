@@ -23,6 +23,11 @@ openai
 orjson
 loguru
 
+# Accurate token counting for the context assembler (Cycle 5). The assembler
+# falls back to a ~4-chars/token heuristic if this is missing, but tiktoken
+# is what makes the budget tight and Unicode-correct.
+tiktoken
+
 # NOTE: chromadb was removed from the hot path. The SQLite store in
 # memory_store.py persists locally with zero external services and works on
 # Python 3.14. To graduate to Chroma/Qdrant later, implement the same
