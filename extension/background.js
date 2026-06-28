@@ -96,6 +96,44 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  else if (message.type === 'ASSEMBLE_CONTEXT') {
+    const query = message.data?.query;
+    const tokenBudget = message.data?.token_budget || 600;
+
+    if (!query || typeof query !== 'string' || !query.trim()) {
+      sendResponse({ success: false, error: 'Query must be a non-empty string' });
+      return true;
+    }
+
+    (async () => {
+      try {
+        const data = await assembleContext(query, tokenBudget);
+        sendResponse({ success: true, data });
+      } catch (error) {
+        sendResponse({ success: false, error: error.message });
+      }
+    })();
+    return true;
+  }
+
+  else if (message.type === 'FEEDBACK') {
+    const recallId = message.data?.recall_id;
+    const memoryId = message.data?.memory_id;
+    if (!recallId || !memoryId) {
+      sendResponse({ success: false, error: 'recall_id and memory_id required' });
+      return true;
+    }
+    (async () => {
+      try {
+        const data = await sendFeedback(recallId, memoryId);
+        sendResponse({ success: true, data });
+      } catch (error) {
+        sendResponse({ success: false, error: error.message });
+      }
+    })();
+    return true;
+  }
+
   if (message.type === 'CHECK_DAEMON') {
     checkDaemonHealth()
       .then(isHealthy => {
@@ -236,6 +274,45 @@ async function recallMemories(query, limit = 5) {
     console.error('Failed to recall memories:', error);
     throw error;
   }
+}
+
+async function assembleContext(query, tokenBudget) {
+  const params = new URLSearchParams({
+    query,
+    token_budget: String(tokenBudget),
+  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 8000);
+  try {
+    const response = await fetch(`${DAEMON_URL}/assemble?${params}`, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    if (!response.ok) {
+      let detail = `HTTP ${response.status}`;
+      try {
+        const errBody = await response.json();
+        if (errBody?.detail) detail = String(errBody.detail);
+      } catch (_) { /* keep status */ }
+      throw new Error(`Daemon error: ${detail}`);
+    }
+    return await response.json();
+  } catch (error) {
+    clearTimeout(timeoutId);
+    throw error;
+  }
+}
+
+async function sendFeedback(recallId, memoryId) {
+  const response = await fetch(`${DAEMON_URL}/feedback`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ recall_id: recallId, memory_id: memoryId }),
+  });
+  if (!response.ok) throw new Error(`Feedback failed: HTTP ${response.status}`);
+  return await response.json();
 }
 
 async function checkDaemonHealth() {

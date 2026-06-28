@@ -79,6 +79,44 @@ def recall(query: str, k: int = 5, source_app: Optional[str] = None) -> list:
 
 
 @mcp.tool()
+def recall_context(query: str, token_budget: int = 1200, source_app: Optional[str] = None) -> dict:
+    """
+    Recall the user's cross-tool memory as a single, ready-to-inject context
+    block — deduped and trimmed to a token budget. Prefer this over `recall`
+    when you want to drop prior context straight into your reasoning rather than
+    browse a list: it returns signal, not raw dumps.
+
+    Use `confidence` to decide whether to inject at all — it combines top-result
+    score with the share of candidates that survived dedupe + budgeting.
+
+    Args:
+        query: what context to assemble (natural language).
+        token_budget: max tokens in the returned block (default 1200, must be > 0).
+        source_app: optional filter, e.g. "perplexity" or "chatgpt".
+    Returns:
+        {
+          context, tokens_used, token_budget, tokenizer, confidence, recall_id,
+          included: [{id, source_app, score, tokens, truncated}, ...],
+          stats: {candidates, deduped, included, dropped_*}
+        }
+    """
+    params = {"query": query, "token_budget": str(token_budget)}
+    if source_app:
+        params["source_app"] = source_app
+    data = _get("/assemble?" + urllib.parse.urlencode(params))
+    return {
+        "context": data.get("context", ""),
+        "tokens_used": data.get("tokens_used", 0),
+        "token_budget": data.get("token_budget", token_budget),
+        "tokenizer": data.get("tokenizer"),
+        "confidence": data.get("confidence", 0.0),
+        "recall_id": data.get("recall_id"),
+        "included": data.get("included", []),
+        "stats": data.get("stats", {}),
+    }
+
+
+@mcp.tool()
 def store(text: str, source_app: str = "mcp", tags: Optional[list] = None) -> dict:
     """
     Save a new memory to Continuum so it can be recalled later from any tool.

@@ -30,6 +30,22 @@ function initChatGPTIntegration() {
   // Inject sidebar
   injectMemorySidebar();
 
+  // Cycle 5 D3: auto-inject relevant context from a debounced draft watcher.
+  // The watcher is generic; we just hand it the ChatGPT-specific composer
+  // selectors so the same module can extend to Perplexity/Claude later.
+  if (window.__continuumAutoInject) {
+    window.__continuumAutoInject.init({
+      sourceTag: 'chatgpt',
+      composerSelectors: [
+        '#prompt-textarea',
+        'div[contenteditable="true"][id="prompt-textarea"]',
+        'textarea[data-id="root"]',
+        'textarea[placeholder*="Message" i]',
+        '[contenteditable="true"][role="textbox"]',
+      ],
+    });
+  }
+
   // Watch for messages
   observeChatMessages();
 

@@ -14,7 +14,7 @@ Endpoints
   GET  /stats       observability: counts by source app + embedding model
   POST /evaluate    MLOps: score recall quality on labeled probes (precision@k, MRR)
 """
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ValidationError, ConfigDict
@@ -27,6 +27,7 @@ from dotenv import load_dotenv, set_key
 from memory_store import MemoryStore
 from embeddings import build_provider
 from ranker import Ranker, RankerConfig
+from assembler import assemble_context, DEFAULT_BUDGET
 
 import json
 import uuid
@@ -322,6 +323,55 @@ async def recall_memory(
                 "recall_id": recall_id, "memories": formatted}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/assemble")
+async def assemble(
+    query: str = Query(..., min_length=1),
+    token_budget: int = Query(default=DEFAULT_BUDGET, gt=0, le=32000),
+    n_candidates: int = Query(default=12, gt=0, le=200),
+    source_app: Optional[str] = None,
+):
+    """
+    Context orchestration (Cycle 5): instead of raw ranked memories, return a
+    single context block trimmed to a token budget — deduped and
+    summarize-to-fit. This is what an agent injects; /recall stays the raw search
+    used by the dashboard/extension.
+
+      query         what to recall context about (required, non-empty)
+      token_budget  max tokens in the returned block (default CONTINUUM_CONTEXT_BUDGET)
+      n_candidates  how many ranked memories to consider before fitting
+      source_app    optional filter to one tool's memories
+    """
+    if not query.strip():
+        raise HTTPException(status_code=400, detail="query is required for /assemble")
+    try:
+        results = search(query, n_candidates, source_app=source_app)
+    except Exception as e:
+        # Embedding-layer failures are upstream-config problems, not server bugs.
+        print(f"⚠️  /assemble search failed: {type(e).__name__}: {e}")
+        raise HTTPException(status_code=502, detail="retrieval backend unavailable")
+    try:
+        assembled = assemble_context(results, query=query, token_budget=token_budget)
+    except Exception as e:
+        print(f"⚠️  /assemble assemble_context failed: {type(e).__name__}: {e}")
+        raise HTTPException(status_code=500, detail="context assembly failed")
+
+    # Log the candidate set so auto-inject acceptance can be tied back later.
+    recall_id = str(uuid.uuid4())
+    logging_failed = False
+    try:
+        store.log_recall(recall_id, query, results)
+    except Exception as e:
+        logging_failed = True
+        print(f"⚠️  recall logging failed (assemble): {type(e).__name__}: {e}")
+
+    payload = {"success": True, "ranker": ranker.cfg.mode, **assembled}
+    if logging_failed:
+        payload["logging_failed"] = True
+    else:
+        payload["recall_id"] = recall_id
+    return payload
 
 
 @app.post("/feedback")

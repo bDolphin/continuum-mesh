@@ -10,9 +10,42 @@ themselves.
 
 | Tool | What it does |
 |------|--------------|
-| `recall(query, k=5, source_app=None)` | semantic search over the user's memory (goes through the ranker) |
+| `recall(query, k=5, source_app=None)` | semantic search over the user's memory (goes through the ranker) — returns a ranked **list** of raw memories |
+| `recall_context(query, token_budget=1200, source_app=None)` | returns a single **injectable context block**: ranked → deduped → summarize-to-fit a token budget. Use this when you want to drop prior context straight into reasoning rather than browse a list. |
 | `store(text, source_app="mcp", tags=[])` | save a new memory |
 | `stats()` | counts by source app + embedding model |
+
+`recall` vs `recall_context`: `recall` is raw search (the shape the dashboard/extension
+use). `recall_context` is the **orchestration** layer (Cycle 5 thesis: *retrieval ≠
+orchestration*) — it proxies the daemon's `GET /assemble`, which dedupes near-duplicate
+memories (so the same fact captured from two tools isn't repeated) and trims the set to a
+token budget via deterministic, query-aware extractive compression. Default budget is 1200
+tokens, overridable per call or via `CONTINUUM_CONTEXT_BUDGET`.
+
+`recall_context` returns the following shape:
+
+```jsonc
+{
+  "context": "<ready-to-inject block, '\\n\\n'-joined per-source provenance>",
+  "tokens_used": 1187,
+  "token_budget": 1200,
+  "tokenizer": "tiktoken/cl100k_base",   // or "heuristic/4-chars"
+  "confidence": 0.62,                    // top_score * (included/candidates) — threshold this for auto-inject
+  "recall_id": "…",                      // pair with POST /feedback to log acceptance
+  "included": [
+    {"id": "…", "source_app": "chatgpt", "score": 0.91, "tokens": 84, "truncated": false}
+  ],
+  "stats": {
+    "candidates": 12, "deduped": 9, "included": 4,
+    "dropped_duplicates": 3, "dropped_empty": 0,
+    "dropped_no_budget": 5, "dropped_no_signal": 0
+  }
+}
+```
+
+`dropped_no_signal` counts memories whose sentences had **zero** token overlap with the
+query — the assembler drops rather than guesses, so a low `confidence` plus a high
+`dropped_no_signal` is a clean "don't inject" decision.
 
 The server is a thin MCP front-end over the daemon's HTTP API — it never touches
 the store or embeddings directly, so the ranker, dedupe, and provenance stay in
